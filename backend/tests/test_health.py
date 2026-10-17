@@ -4,7 +4,7 @@ from backend.app.main import app
 
 
 def test_health_endpoint_reports_provider_and_boolean_key_presence(monkeypatch) -> None:
-    secret = "AIza-this-value-must-not-be-returned"
+    secret = "synthetic-test-secret-that-is-not-a-provider-key"
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
     monkeypatch.setenv("GEMINI_API_KEY", secret)
     response = TestClient(app).get("/health")
