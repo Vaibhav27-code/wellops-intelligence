@@ -8,6 +8,8 @@ import { HeatmapViz } from './HeatmapViz';
 import { MapViz } from './MapViz';
 import { Table2, LineChart, BarChart2, MapPin, Grid } from 'lucide-react';
 
+import { resolveChartConfig } from './chartUtils';
+
 interface VizRendererProps {
   spec: VisualizationSpec;
 }
@@ -22,23 +24,33 @@ function checkCompatibility(spec: VisualizationSpec): Record<VizType, boolean> {
   const first = data[0];
   const keys = Object.keys(first);
 
+  const lineCfg = resolveChartConfig(spec, 'line');
+  const barCfg = resolveChartConfig(spec, 'bar');
+
   // Map enabled when spec is a map or data contains coordinates/well IDs
-  const hasGeo = spec.type === 'map' ||
-                 (('latitude' in first || 'lat' in first) && ('longitude' in first || 'lon' in first)) ||
-                 ('well_id' in first && /WELL-/i.test(String(first.well_id)));
+  const hasGeo =
+    spec.type === 'map' ||
+    (('latitude' in first || 'lat' in first) && ('longitude' in first || 'lon' in first)) ||
+    ('well_id' in first && /WELL-/i.test(String(first.well_id)));
 
   // Heatmap requires month/date and area/location and numeric count/value
-  const hasHeatmap = ('month' in first || 'month_str' in first || 'date' in first) &&
-                     ('area' in first || 'area_name' in first || 'area_id' in first);
+  const hasHeatmap =
+    ('month' in first || 'month_str' in first || 'date' in first) &&
+    ('area' in first || 'area_name' in first || 'area_id' in first);
 
   // Line requires numeric y and date/time/numeric x
-  const hasLine = !!spec.x || keys.some((k) => /date|week|time|day|period/i.test(k));
+  const hasLine =
+    lineCfg.hasNumeric &&
+    lineCfg.yKeys.length > 0 &&
+    (!!spec.x || keys.some((k) => /date|week|time|day|period|month|year|timestamp/i.test(k)));
 
   // Bar requires categorical x and numeric y
-  const hasBar = keys.length >= 2;
+  const hasBar = barCfg.hasNumeric && barCfg.yKeys.length > 0 && keys.length >= 2;
 
   // Status card: typically 1 row with status attributes
-  const hasCard = data.length === 1 && ('Well ID' in first || 'well_id' in first || 'Production Status' in first);
+  const hasCard =
+    data.length === 1 &&
+    ('Well ID' in first || 'well_id' in first || 'Production Status' in first);
 
   return {
     table: true, // Table is always valid

@@ -1,4 +1,3 @@
-
 import {
   LineChart as ReLineChart,
   Line,
@@ -10,6 +9,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import type { VisualizationSpec } from '../../types';
+import { resolveChartConfig } from './chartUtils';
 
 const COLORS = ['#4F7BE8', '#E8774F', '#4FBE80', '#BE4F9E', '#E8C84F', '#4FBEBE'];
 
@@ -18,22 +18,27 @@ interface LineChartVizProps {
 }
 
 export function LineChartViz({ spec }: LineChartVizProps) {
-  const yKeys = Array.isArray(spec.y)
-    ? spec.y
-    : spec.y
-    ? [spec.y]
-    : spec.data.length > 0
-    ? Object.keys(spec.data[0]).filter((k) => k !== spec.x)
-    : [];
+  const { xKey, yKeys, data } = resolveChartConfig(spec, 'line');
+
+  if (yKeys.length === 0) {
+    return (
+      <div className="chart-wrapper">
+        <h3 className="chart-title">{spec.title}</h3>
+        <p style={{ color: 'var(--c-text-muted)', fontSize: '12px', padding: '16px' }}>
+          No numeric metrics available to plot as a line chart. Use Table view to inspect records.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="chart-wrapper">
       <h3 className="chart-title">{spec.title}</h3>
       <ResponsiveContainer width="100%" height={280}>
-        <ReLineChart data={spec.data} margin={{ top: 8, right: 24, bottom: 8, left: 0 }}>
+        <ReLineChart data={data} margin={{ top: 12, right: 24, bottom: 12, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
           <XAxis
-            dataKey={spec.x ?? 'date'}
+            dataKey={xKey}
             tick={{ fill: '#9ca3af', fontSize: 11 }}
             axisLine={{ stroke: '#374151' }}
             tickLine={false}
@@ -43,6 +48,7 @@ export function LineChartViz({ spec }: LineChartVizProps) {
             axisLine={{ stroke: '#374151' }}
             tickLine={false}
             unit={spec.units ? ` ${spec.units}` : ''}
+            domain={['auto', 'auto']}
           />
           <Tooltip
             contentStyle={{
@@ -51,7 +57,7 @@ export function LineChartViz({ spec }: LineChartVizProps) {
               borderRadius: 8,
               fontSize: 12,
             }}
-            labelStyle={{ color: '#e2e8f0' }}
+            labelStyle={{ color: '#e2e8f0', fontWeight: 600 }}
           />
           {yKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />}
           {yKeys.map((key, i) => (
@@ -61,8 +67,9 @@ export function LineChartViz({ spec }: LineChartVizProps) {
               dataKey={key}
               stroke={COLORS[i % COLORS.length]}
               strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 4 }}
+              dot={{ r: 4, strokeWidth: 1, fill: COLORS[i % COLORS.length] }}
+              activeDot={{ r: 6 }}
+              connectNulls={true}
             />
           ))}
         </ReLineChart>
