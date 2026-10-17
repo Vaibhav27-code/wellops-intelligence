@@ -12,7 +12,6 @@ from backend.app.memory.store import (
     open_memory,
     record_answer_feedback,
     record_correction,
-    retrieve_answer_feedback,
     retrieve_private_memory,
     retrieve_shared_memory,
 )
@@ -154,15 +153,6 @@ def api_post_feedback(req: FeedbackRequestModel) -> dict[str, Any]:
             "rating": feedback["rating"],
             "status": "recorded",
         }
-    finally:
-        conn.close()
-
-
-@router.get("/feedback/{user_id}")
-def api_get_feedback(user_id: str) -> dict[str, Any]:
-    conn = open_memory(get_db_path())
-    try:
-        return {"feedback": retrieve_answer_feedback(conn, user_id=user_id)}
     finally:
         conn.close()
 

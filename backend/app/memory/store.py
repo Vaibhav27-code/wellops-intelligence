@@ -241,15 +241,12 @@ def record_answer_feedback(
         (feedback_id, user_id, message_id, rating, comment, created_at, now),
     )
     connection.commit()
-    return {
-        "feedback_id": feedback_id,
-        "user_id": user_id,
-        "message_id": message_id,
-        "rating": rating,
-        "comment": comment,
-        "created_at": created_at,
-        "updated_at": now,
-    }
+    saved = connection.execute(
+        """SELECT feedback_id, user_id, message_id, rating, comment, created_at, updated_at
+           FROM answer_feedback WHERE user_id = ? AND message_id = ?""",
+        (user_id, message_id),
+    ).fetchone()
+    return _row(saved)
 
 
 def retrieve_answer_feedback(
