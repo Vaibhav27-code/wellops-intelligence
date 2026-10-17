@@ -519,6 +519,21 @@ class CopilotEngine:
                 answer += f" A prior shared note by {author} says: {prior.get('text')}"
             else:
                 answer = f"Latest inspection on {inspection_date} (by {inspector}) indicates {well_id} is {status}: the measured delta is {delta} °C against a {threshold} °C limit."
+            field_notes = [
+                note for note in well_det.get("notes", [])
+                if re.search(r"\b(planned|shut[- ]?in|return|back online)\b", str(note.get("text", "")), re.IGNORECASE)
+            ]
+            for note in field_notes:
+                author = _user_display_name(note.get("author_user_id"))
+                answer += f" Related field note by {author}: {note.get('text')}"
+                citations.append({
+                    "id": f"cit-{note.get('note_id')}",
+                    "source_type": "note",
+                    "source_file": f"assets/{well_id}/context.jsonl",
+                    "record_id": note.get("note_id"),
+                    "excerpt": note.get("text"),
+                    "well_id": well_id,
+                })
             if contradicts:
                 answer += " The inspection evidence conflicts with the status claim; it is recorded as unconfirmed. Please verify in the field."
             elif planned_claim:
