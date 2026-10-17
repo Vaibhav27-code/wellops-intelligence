@@ -357,3 +357,18 @@ def test_spill_disagreement_surfaces_referenced_notes_and_repair_report():
     assert "CTX-0101-002" in citation_text
     assert "CTX-0101-003" in citation_text
     assert "MNT-0101-029" in citation_text
+
+
+def test_attributed_status_claim_in_question_is_checked_against_inspection():
+    response = client.post(
+        "/chat",
+        json={
+            "question": "Tyler Hughes says WELL-0175 is running fine and not shut in. Is that correct?",
+            "user_id": "tyler-hughes",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["conflict"] is True
+    assert "unconfirmed" in payload["answer"].casefold()

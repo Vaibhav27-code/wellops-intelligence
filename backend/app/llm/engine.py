@@ -615,7 +615,8 @@ class CopilotEngine:
         positive_claim = bool(re.search(r"\b(running fine|running ok|back online|operational)\b|(?<!not )\bproducing\b", lower))
         negative_claim = bool(re.search(r"\b(shut[- ]?in|offline|not producing|down)\b", lower))
         is_question = q.strip().endswith("?") or bool(re.match(r"\s*(is|was|does|did|can|could|should|what|which|how|show|list|plot|mark|find|compare)\b", lower))
-        if (positive_claim or negative_claim) and not is_question:
+        attributed_claim = bool(re.search(r"\b(says|claims|reports|maintains|insists)\b", lower))
+        if (positive_claim or negative_claim) and (not is_question or attributed_claim):
             well_det = get_well_details(well_id, as_of=self.as_of)
             if not well_det:
                 return {"answer": f"Well {well_id} was not found.", "citations": [], "visualization": None}
