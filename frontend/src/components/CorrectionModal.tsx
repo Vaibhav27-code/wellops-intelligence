@@ -20,6 +20,8 @@ export function CorrectionModal({
 }: CorrectionModalProps) {
   const { currentUser, addCorrection, isSidebarOpen, toggleSidebar } = useStore();
   const [scope, setScope] = React.useState<'well' | 'well_type'>(wellId ? 'well' : 'well_type');
+  const [targetWellId, setTargetWellId] = React.useState(wellId ?? '');
+  const [targetWellType, setTargetWellType] = React.useState(wellType ?? '');
   const [fieldName, setFieldName] = React.useState(initialField);
   const [originalVal, setOriginalVal] = React.useState(String(currentValue ?? ''));
   const [correctedVal, setCorrectedVal] = React.useState('');
@@ -38,8 +40,8 @@ export function CorrectionModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fieldName || !correctedVal || !reason) {
-      setError('Field name, corrected value, and reason are required.');
+    if (!fieldName || !correctedVal || !reason || (scope === 'well' && !targetWellId.trim()) || (scope === 'well_type' && !targetWellType.trim())) {
+      setError('Choose a correction scope and target, then provide the field, corrected value, and reason.');
       return;
     }
     setSaving(true);
@@ -48,8 +50,8 @@ export function CorrectionModal({
     try {
       const payload = {
         scope,
-        well_id: scope === 'well' ? (wellId || 'WELL-0164') : undefined,
-        well_type: scope === 'well_type' ? (wellType || 'T350') : undefined,
+        well_id: scope === 'well' ? targetWellId.trim() : undefined,
+        well_type: scope === 'well_type' ? targetWellType.trim() : undefined,
         field: fieldName,
         original_value: originalVal,
         corrected_value: correctedVal,
@@ -61,8 +63,8 @@ export function CorrectionModal({
       addCorrection({
         correction_id: res.correction_id,
         scope,
-        well_id: scope === 'well' ? (wellId || 'WELL-0164') : undefined,
-        well_type: scope === 'well_type' ? (wellType || 'T350') : undefined,
+        well_id: scope === 'well' ? targetWellId.trim() : undefined,
+        well_type: scope === 'well_type' ? targetWellType.trim() : undefined,
         field: fieldName,
         original_value: originalVal,
         corrected_value: correctedVal,
@@ -78,7 +80,7 @@ export function CorrectionModal({
       }
 
       setSuccessInfo({
-        scope: scope === 'well' ? `Well ${wellId || 'WELL-0164'}` : `All wells of type ${wellType || 'T350'}`,
+        scope: scope === 'well' ? `Well ${targetWellId.trim()}` : `All wells of type ${targetWellType.trim()}`,
         field: fieldName,
         original: originalVal,
         corrected: correctedVal,
@@ -171,7 +173,7 @@ export function CorrectionModal({
                   checked={scope === 'well'}
                   onChange={() => setScope('well')}
                 />
-                Single well {wellId ? `(${wellId})` : ''}
+                Single well
               </label>
               <label>
                 <input
@@ -180,10 +182,36 @@ export function CorrectionModal({
                   checked={scope === 'well_type'}
                   onChange={() => setScope('well_type')}
                 />
-                All wells of type {wellType ? `(${wellType})` : ''}
+                All wells of a type
               </label>
             </div>
           </div>
+
+          {scope === 'well' ? (
+            <div className="form-group">
+              <label htmlFor="corr-well-id">Well ID *</label>
+              <input
+                id="corr-well-id"
+                className="form-input"
+                value={targetWellId}
+                onChange={(e) => setTargetWellId(e.target.value)}
+                placeholder="e.g. WELL-0164"
+                required
+              />
+            </div>
+          ) : (
+            <div className="form-group">
+              <label htmlFor="corr-well-type">Well type *</label>
+              <input
+                id="corr-well-type"
+                className="form-input"
+                value={targetWellType}
+                onChange={(e) => setTargetWellType(e.target.value)}
+                placeholder="e.g. T350"
+                required
+              />
+            </div>
+          )}
 
           <div className="form-group">
             <label htmlFor="corr-field">Field name *</label>
