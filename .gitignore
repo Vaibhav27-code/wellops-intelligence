@@ -8,5 +8,6 @@ __pycache__/
 *.db
 data/raw/*
 !data/raw/.gitkeep
+docs/.eval_run_results.json
 frontend/node_modules/
 frontend/dist/
