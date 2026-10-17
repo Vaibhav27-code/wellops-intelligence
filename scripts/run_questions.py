@@ -11,7 +11,14 @@ import httpx
 
 
 def _questions(payload: Any) -> list[dict[str, str]]:
+    default_user_id: str | None = None
+    default_session_id: str | None = None
     if isinstance(payload, dict):
+        default_user_id = payload.get("user_id") or payload.get("userId")
+        default_session_id = payload.get("session_id") or payload.get("sessionId")
+        for name, value in (("user_id", default_user_id), ("session_id", default_session_id)):
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"Top-level {name} must be a string")
         payload = payload.get("questions")
     if not isinstance(payload, list):
         raise ValueError("Questions JSON must be an array or an object with a 'questions' array")
@@ -21,18 +28,32 @@ def _questions(payload: Any) -> list[dict[str, str]]:
             question, label = item, str(index)
         elif isinstance(item, dict) and isinstance(item.get("question"), str):
             question, label = item["question"], str(item.get("id", index))
-            per_item_user = item.get("user_id")
-            if per_item_user is not None and not isinstance(per_item_user, str):
-                raise ValueError(f"Question {index} user_id must be a string")
         else:
             raise ValueError(f"Question {index} must be a string or an object with a string 'question'")
         if not question.strip():
             raise ValueError(f"Question {index} cannot be empty")
         normalized = {"id": label, "question": question.strip()}
-        if isinstance(item, dict) and isinstance(item.get("user_id"), str):
-            normalized["user_id"] = item["user_id"]
-        if isinstance(item, dict) and isinstance(item.get("session_id"), str):
-            normalized["session_id"] = item["session_id"]
+        if isinstance(item, dict):
+            per_item_user = next(
+                (item[key] for key in ("user_id", "userId", "suggestedUserId") if item.get(key) is not None),
+                None,
+            )
+            per_item_session = next(
+                (item[key] for key in ("session_id", "sessionId") if item.get(key) is not None),
+                None,
+            )
+        else:
+            per_item_user = per_item_session = None
+        selected_user = per_item_user if per_item_user is not None else default_user_id
+        selected_session = per_item_session if per_item_session is not None else default_session_id
+        if selected_user is not None:
+            if not isinstance(selected_user, str):
+                raise ValueError(f"Question {index} user_id must be a string")
+            normalized["user_id"] = selected_user
+        if selected_session is not None:
+            if not isinstance(selected_session, str):
+                raise ValueError(f"Question {index} session_id must be a string")
+            normalized["session_id"] = selected_session
         result.append(normalized)
     return result
 
@@ -100,11 +121,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--user", "--user-id", dest="user_id", default="eval-user")
     parser.add_argument("--base-url", default=os.getenv("ASSET_INTELLIGENCE_API", "http://localhost:8000"))
     parser.add_argument("--output", type=Path, default=Path("results.md"))
+    parser.add_argument("--json-output", type=Path, help="Optional machine-readable response output")
     args = parser.parse_args(argv)
 
     questions = _questions(json.loads(args.questions_json.read_text(encoding="utf-8")))
     results = run_questions(questions, base_url=args.base_url, user_id=args.user_id)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(_markdown(results), encoding="utf-8")
+    if args.json_output:
+        args.json_output.parent.mkdir(parents=True, exist_ok=True)
+        args.json_output.write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Wrote {len(results)} results to {args.output.resolve()}")
     return 0
 

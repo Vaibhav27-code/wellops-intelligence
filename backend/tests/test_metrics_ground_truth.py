@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from datetime import date, timedelta
@@ -120,8 +121,11 @@ def test_fleet_metric_totals_match_independent_pandas_ground_truth(
     tmp_path: Path, monkeypatch
 ) -> None:
     source_root = get_sample_data_root()
-    database = tmp_path / "ground-truth.db"
-    load_dataset(source_root, database)
+    test_day_database = os.getenv("TEST_DAY_DATABASE")
+    database = Path(test_day_database) if test_day_database else tmp_path / "ground-truth.db"
+    if not test_day_database:
+        load_dataset(source_root, database)
+    assert database.is_file(), f"Test database does not exist: {database}"
     monkeypatch.setenv("ASSET_INTELLIGENCE_DB", str(database))
     monkeypatch.setenv("ASSET_INTELLIGENCE_DATASET", str(source_root))
     monkeypatch.delenv("REFERENCE_DATE", raising=False)
@@ -230,6 +234,9 @@ def test_mutated_unseen_dataset_matches_independent_ground_truth(
     tmp_path: Path, monkeypatch
 ) -> None:
     source_root = get_sample_data_root()
+    # The mutation oracle is based on source timestamps, independent of any
+    # REFERENCE_DATE override used by the calling environment.
+    monkeypatch.delenv("REFERENCE_DATE", raising=False)
     source_reference = get_reference_date()
     simulated_root = _mutate_dataset(source_root, tmp_path / "unseen-sample-data")
     database = tmp_path / "unseen-asset-intelligence.db"

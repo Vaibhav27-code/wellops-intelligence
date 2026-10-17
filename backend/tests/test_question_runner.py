@@ -54,3 +54,46 @@ def test_question_runner_posts_each_question_and_formats_required_fields() -> No
     assert "Visualization: `table`" in report
     assert "Latency: `" in report and " ms`" in report
     assert "assets/example.jsonl" in report
+
+
+def test_question_runner_accepts_official_metadata_and_user_session_aliases() -> None:
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        requests.append(body)
+        return httpx.Response(200, json={"answer_text": "ok", "citations": [], "visualization": None})
+
+    questions = _questions(
+        {
+            "userId": "default-user",
+            "sessionId": "default-session",
+            "questions": [
+                {
+                    "id": "Q1",
+                    "label": "Q1: official label",
+                    "question": "Question with benchmark metadata?",
+                    "group": "single_well",
+                    "suggestedUser": "Display-only name",
+                    "suggestedUserId": "official-user",
+                    "expected": {"visualization": "card"},
+                    "setup": [],
+                    "followups": [],
+                },
+                {"id": "Q2", "question": "Use defaults?", "expected": {}},
+                {"id": "Q3", "question": "Explicit aliases?", "userId": "item-user", "sessionId": "item-session"},
+            ],
+        }
+    )
+    run_questions(
+        questions,
+        base_url="http://copilot.test",
+        user_id="cli-user",
+        transport=httpx.MockTransport(handler),
+    )
+
+    assert requests == [
+        {"question": "Question with benchmark metadata?", "user_id": "official-user", "session_id": "default-session"},
+        {"question": "Use defaults?", "user_id": "default-user", "session_id": "default-session"},
+        {"question": "Explicit aliases?", "user_id": "item-user", "session_id": "item-session"},
+    ]

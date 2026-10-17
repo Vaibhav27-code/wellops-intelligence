@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta, timezone
@@ -292,8 +293,11 @@ def _format_questions(root: Path) -> list[dict[str, Any]]:
 
 def test_unseen_questions_match_independent_pandas_ground_truth(tmp_path: Path, monkeypatch) -> None:
     root = get_sample_data_root()
-    database = tmp_path / "unseen-questions.db"
-    load_dataset(root, database)
+    test_day_database = os.getenv("TEST_DAY_DATABASE")
+    database = Path(test_day_database) if test_day_database else tmp_path / "unseen-questions.db"
+    if not test_day_database:
+        load_dataset(root, database)
+    assert database.is_file(), f"Test database does not exist: {database}"
     monkeypatch.setenv("ASSET_INTELLIGENCE_DB", str(database))
     monkeypatch.setenv("ASSET_INTELLIGENCE_DATASET", str(root))
     monkeypatch.delenv("REFERENCE_DATE", raising=False)

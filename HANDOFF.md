@@ -193,6 +193,7 @@ Format: `[time] tool: done / in progress / blocked / next`
   - Page 2 provides compact 18-row results template (`Question | Answer summary | Evidence | Worked/Failed | Why`) ready to be populated from `results.md`, plus concise what-worked / what-failed sections.
   - Created automated export script `docs/export_writeup.cjs` generating `docs/writeup.html` and `docs/writeup.pdf` using Puppeteer/Chrome with exact 10pt A4 print typography and page-break handling.
   - Verified `docs/writeup.pdf` fits exactly 2 printed A4 pages (`/Count 2`, Page 1 ~138KB, Page 2 ~138KB, Page 3 does not exist).
+- [15:11 IST, 2026-10-17] Codex: added cross-platform test-day wrappers, shared ingestion/oracle/question-run driver, and official question metadata support in `run_questions.py` / verified: full rules-mode pytest 76 passed (one existing Starlette/httpx deprecation warning); shifted +365-day dataset ingested with 200 wells and 39,567 inspections, 0 errors and 0 warnings, T200/T350 manual thresholds detected; mutated-dataset and pandas-oracle checks passed 3/3; rules question run and one Gemini question pass returned `provider_path=rules` and `provider_path=llm` respectively with no structured-output or citation differences; final rules-only dry-run passed with Gemini key blank, and captured output key scan passed; PowerShell wrapper, Bash syntax, and Python compile checks passed / next: commit and push the test-day harness.
 
 
 
