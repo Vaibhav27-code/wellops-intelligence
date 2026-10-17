@@ -9,9 +9,9 @@ interface StatusCardProps {
 export function StatusCard({ spec }: StatusCardProps) {
   const row = spec.data[0] ?? {};
 
-  const status = String(row.status ?? row.Status ?? 'Unknown');
+  const status = Object.values(row).map((value) => String(value ?? '')).join(' ');
   const isWarn = /inspect|warn|pending/i.test(status);
-  const isErr = /down|shut.in|spill|violation|fail/i.test(status);
+  const isErr = /not\s+producing|non[- ]?producing|down|shut.in|spill|violation|fail/i.test(status);
 
   const icon = isErr ? (
     <AlertTriangle size={24} className="status-card__icon status-card__icon--err" />
