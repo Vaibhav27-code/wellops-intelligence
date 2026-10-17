@@ -48,10 +48,14 @@ export function ChatThread() {
       const assistantMsg: ChatMessage = {
         id: nextId(),
         role: 'assistant',
-        content: res.answer,
+        content: res.answer_text || res.answer,
         citations: res.citations,
         visualization: res.visualization,
         conflict: res.conflict,
+        conflicts: res.conflicts,
+        conflict_message: res.conflict_message,
+        calculation_explanation: res.calculation_explanation,
+        data_as_of: res.data_as_of,
         timestamp: new Date().toISOString(),
       };
       addMessage(currentUser.user_id, assistantMsg);
@@ -86,11 +90,11 @@ export function ChatThread() {
             <p className="chat-empty__headline">
               Ask anything about your wells.
             </p>
-            <ExampleChips onSelect={(q) => { setInput(q); }} />
+            <ExampleChips onSelect={(q) => { send(q); }} />
           </div>
         )}
 
-        {messages.map((msg) => (
+        {messages.map((msg: ChatMessage) => (
           <MessageBubble key={msg.id} message={msg} />
         ))}
 

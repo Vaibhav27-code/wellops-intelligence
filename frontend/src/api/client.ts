@@ -23,6 +23,9 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
+  getUsers: () =>
+    request<{ users: Array<{ user_id: string; name: string; role: string; team_id?: string }> }>('/users'),
+
   getWell: (wellId: string) =>
     request<Record<string, unknown>>(`/wells/${encodeURIComponent(wellId)}`),
 

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+import calendar
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from backend.app.calc.rules import load_production_rule
+from backend.app.calc.compliance import load_compliance_rules
+from backend.app.calc.rules import assess_spill, load_production_rule, load_rca_rule, load_spill_rules
 from backend.app.llm.rules_fallback import Intent
 from backend.app.memory.store import (
     append_private_message,
@@ -17,7 +19,7 @@ from backend.app.memory.store import (
     retrieve_private_memory,
     retrieve_shared_memory,
 )
-from backend.app.tools.db import get_db_path, get_reference_date, get_sample_data_root, query_records
+from backend.app.tools.db import get_connection, get_db_path, get_reference_date, get_sample_data_root, query_records
 from backend.app.tools.downtime import get_well_downtime
 from backend.app.tools.metrics import query_metric
 from backend.app.tools.repairs import (
@@ -28,6 +30,50 @@ from backend.app.tools.search import search_manuals_and_sops
 from backend.app.tools.spills import get_all_real_spills
 from backend.app.tools.viz import generate_visualization
 from backend.app.tools.wells import get_latest_inspection, get_well_details, search_wells
+from backend.app.tools.time_ranges import resolve_date_range
+
+
+def _user_display_name(user_id: str | None) -> str:
+    if not user_id:
+        return "Unknown inspector"
+    users = query_records("user")
+    user = next((row for row in users if row.get("user_id") == user_id), None)
+    return str(user.get("name")) if user and user.get("name") else user_id
+
+
+def _intent_period(intent: Intent | None, reference_date: str, default_phrase: str) -> tuple[str, str]:
+    return resolve_date_range(
+        reference_date=reference_date,
+        date_from=intent.date_from if intent else None,
+        date_to=intent.date_to if intent else None,
+        season=intent.season if intent else None,
+        quarter=intent.quarter if intent else None,
+        year=intent.year if intent else None,
+        date_phrase=(intent.date_phrase if intent and intent.date_phrase else default_phrase),
+    )
+
+
+def _question_date(text: str, reference_date: str) -> str | None:
+    iso = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", text)
+    if iso:
+        try:
+            return date.fromisoformat(iso.group(1)).isoformat()
+        except ValueError:
+            return None
+    month_pattern = "|".join(
+        sorted({name for month in range(1, 13) for name in (calendar.month_name[month], calendar.month_abbr[month])}, key=len, reverse=True)
+    )
+    match = re.search(rf"\b(\d{{1,2}})\s+({month_pattern})(?:\s+(20\d{{2}}))?\b", text, re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        month = next(
+            month for month in range(1, 13)
+            if match.group(2).casefold() in {calendar.month_name[month].casefold(), calendar.month_abbr[month].casefold()}
+        )
+        return date(int(match.group(3) or reference_date[:4]), month, int(match.group(1))).isoformat()
+    except (StopIteration, ValueError):
+        return None
 
 
 class CopilotEngine:
@@ -622,7 +668,7 @@ class CopilotEngine:
             insp_date = str(insp.get("inspected_at", ""))[:10]
             method = insp.get("method", "drone")
             user_id_insp = insp.get("inspector_user_id")
-            inspector_name = "Ryan Brooks" if user_id_insp == "U-104" else user_id_insp
+            inspector_name = _user_display_name(user_id_insp)
 
             # Check if this well had a correction
             active_corrs = well_det.get("active_corrections", [])
@@ -654,9 +700,9 @@ class CopilotEngine:
                 # Q15: Well corrected by Michael Turner
                 ans = (
                     f"**Yes, {wid} is producing oil right now.**\n\n"
-                    f"• The 15 Oct 2026 reading was corrected from {corr.get('original_value')} °C to **{corr.get('corrected_value')} °C** by **{corr.get('author')}** ({corr.get('reason')}).\n"
+                    f"• The {insp_date} reading was corrected from {corr.get('original_value')} °C to **{corr.get('corrected_value')} °C** by **{_user_display_name(corr.get('author'))}** ({corr.get('reason')}).\n"
                     f"• At {corr.get('corrected_value')} °C against {insp.get('ambient_temp_c')} °C air ({delta} °C delta), it is above the {threshold} °C {wtype} limit.\n"
-                    f"• ⚠️ Note: The inspector's note \"Pump jack not moving.\" (Tyler Hughes) in the original inspection record disagrees with this correction."
+                    f"• ⚠️ Note: The inspector's note \"{insp.get('notes')}\" ({inspector_name}) in the original inspection record disagrees with this correction."
                 )
                 conflict = True
                 conflict_msg = "Inspector note disagrees with corrected temperature."
@@ -713,15 +759,16 @@ class CopilotEngine:
 
         # Q2: Which wells in an area are not producing oil right now, and why? Show them in a table.
         if "not producing" in lower and ("area" in lower or "block" in lower or "which wells" in lower):
-            area_name = "Northeast Block 8" if "block 8" in lower else "Northeast Block 7" if "block 7" in lower else "Southwest Block 23"
+            area_name = intent.area_name if intent and intent.area_name else None
             wells = search_wells(area_name=area_name)
+            title_area = area_name or "all areas"
             table_data = []
             citations = []
 
             for w in wells:
                 wid = w.get("asset_id")
                 det = get_well_details(wid, as_of=self.as_of)
-                if not det.get("is_producing"):
+                if det.get("is_producing") is False:
                     delta = det.get("temperature_delta_c")
                     rec_status = w.get("recorded_status", w.get("status", "active"))
                     insp = det.get("latest_inspection", {})
@@ -729,11 +776,14 @@ class CopilotEngine:
 
                     # Check why
                     reason = "No recorded reason."
-                    if notes_str and "pump jack not moving" in notes_str.lower():
+                    if notes_str:
                         reason = f"No recorded reason. The inspector noted \"{notes_str}\""
 
                     # Check open repairs
-                    open_rep = [m for m in det.get("repairs", []) if str(m.get("started_at", ""))[:10] <= self.as_of and (not m.get("completed_at") or str(m.get("completed_at", ""))[:10] > self.as_of)]
+                    open_rep = sorted(
+                        [m for m in det.get("repairs", []) if str(m.get("started_at", ""))[:10] <= self.as_of and (not m.get("completed_at") or str(m.get("completed_at", ""))[:10] > self.as_of)],
+                        key=lambda row: str(row.get("started_at", "")),
+                    )
                     if open_rep:
                         m = open_rep[-1]
                         started = str(m.get("started_at", ""))[:10]
@@ -772,14 +822,13 @@ class CopilotEngine:
 
             viz = generate_visualization(
                 "table",
-                f"Non-Producing Wells in {area_name}",
+                f"Non-Producing Wells in {title_area}",
                 table_data,
                 columns=["Well", "Wellhead above air", "Recorded status", "Reason"],
             )
 
             ans = (
-                f"Found **{len(table_data)} wells** in {area_name} currently not producing oil "
-                f"(all last inspected on 15 Oct 2026 below their well-type temperature delta threshold).\n\n"
+                f"Found **{len(table_data)} wells** in {title_area} currently not producing oil as of {self.as_of}.\n\n"
                 f"Where no maintenance or shut-in record explains the stoppage, field checks are recommended."
             )
 
@@ -792,15 +841,25 @@ class CopilotEngine:
 
         # Q3: Line chart of wellhead temperature against air temperature (e.g. WELL-0001 last 13 weeks)
         if intent_name == "temperature_trend" or "line chart" in lower or ("temperature against air" in lower) or ("last 13 weeks" in lower and "chart" in lower):
-            wid = well_match.group(0).upper() if well_match else "WELL-0001"
+            wid = intent.well_ids[0] if intent and intent.well_ids else (well_match.group(0).upper() if well_match else None)
+            if not wid:
+                return {"answer": "Name a well to plot its temperature trend.", "citations": [], "visualization": None}
             well_det = get_well_details(wid, as_of=self.as_of)
+            if not well_det:
+                return {"answer": f"Well {wid} not found.", "citations": [], "visualization": None}
             threshold = well_det.get("threshold_delta_c", 15.0)
+            start_date, end_date = _intent_period(intent, self.as_of, "last 13 weeks")
+            week_span = re.search(r"\b(\d+)\s+weeks?\b", intent.date_phrase if intent else "", re.IGNORECASE)
+            if week_span and not (intent and (intent.date_from or intent.date_to)):
+                # A request for N weekly readings spans N observation slots (N-1 intervals).
+                start_date = (date.fromisoformat(end_date) - timedelta(days=(int(week_span.group(1)) - 1) * 7)).isoformat()
 
             inspections = query_records("inspection", asset_id=wid, order_by_event=True)
-            # Filter last 13 weeks (23 Jul 2026 to 15 Oct 2026)
             matching = [
                 i for i in inspections
-                if "2026-07-23" <= str(i.get("inspected_at", ""))[:10] <= self.as_of
+                if start_date <= str(i.get("inspected_at", ""))[:10] <= end_date
+                and isinstance(i.get("wellhead_temp_c"), (int, float))
+                and isinstance(i.get("ambient_temp_c"), (int, float))
             ]
 
             chart_data = []
@@ -823,7 +882,7 @@ class CopilotEngine:
 
             viz = generate_visualization(
                 "line",
-                f"{wid} Wellhead Temp vs Air Temp (Last 13 Weeks)",
+                f"{wid} Wellhead Temp vs Air Temp ({start_date} to {end_date})",
                 chart_data,
                 x="date",
                 y=["wellhead_temp_c", "ambient_temp_c"],
@@ -831,8 +890,9 @@ class CopilotEngine:
             )
 
             not_prod_dates = [r["date"] for r in chart_data if r["status"] == "Not Producing"]
+            dates_label = f"{matching[0]['inspected_at'][:10]} to {matching[-1]['inspected_at'][:10]}" if matching else f"{start_date} to {end_date}"
             ans = (
-                f"Line chart for **{wid}** across 13 weekly inspections (23 Jul to 15 Oct 2026):\n\n"
+                f"Line chart for **{wid}** across {len(matching)} inspections ({dates_label}):\n\n"
                 f"• **Producing threshold**: at least {threshold} °C above air temperature.\n"
                 f"• **Non-producing dates**: {', '.join(not_prod_dates)}."
             )
@@ -842,7 +902,7 @@ class CopilotEngine:
                     "id": f"cit-inspections-{wid}",
                     "source_type": "inspection",
                     "source_file": f"assets/{wid}/inspections.jsonl",
-                    "excerpt": f"13 readings from 23 Jul to 15 Oct 2026. Non-producing on {', '.join(not_prod_dates)}.",
+                    "excerpt": f"{len(matching)} readings from {dates_label}. Non-producing on {', '.join(not_prod_dates)}.",
                     "well_id": wid,
                 }
             )
@@ -856,9 +916,11 @@ class CopilotEngine:
 
         # Q4: How many oil spills has well had in period (e.g. WELL-0001 in last 4 years)
         if "how many oil spills" in lower or ("spills has" in lower and "had" in lower):
-            wid = well_match.group(0).upper() if well_match else "WELL-0001"
-            # 4 years: 16 Oct 2022 to 16 Oct 2026
-            spills = get_all_real_spills(well_id=wid, start_date="2022-10-16", as_of=self.as_of)
+            wid = intent.well_ids[0] if intent and intent.well_ids else (well_match.group(0).upper() if well_match else None)
+            if not wid:
+                return {"answer": "Name a well to summarize its spills.", "citations": [], "visualization": None}
+            start_date, end_date = _intent_period(intent, self.as_of, "last 4 years")
+            spills = get_all_real_spills(well_id=wid, start_date=start_date, end_date=end_date, as_of=end_date)
             total_vol = round(sum(s["volume_bbl"] for s in spills), 1)
 
             table_data = [
@@ -883,30 +945,14 @@ class CopilotEngine:
                 }
                 for s in spills
             ]
-            # Mention false positive CTX-0001-001
-            citations.append(
-                {
-                    "id": "cit-ctx-false-pos",
-                    "source_type": "note",
-                    "source_file": f"assets/{wid}/context.jsonl",
-                    "record_id": "CTX-0001-001",
-                    "excerpt": "Inspection INS-0001-0070 (7 Mar 2024): corrected as rainwater, excluded from statistics.",
-                    "well_id": wid,
-                }
-            )
-
             viz = generate_visualization(
                 "table",
-                f"{wid} Oil Spills (Last 4 Years)",
+                f"{wid} Oil Spills ({start_date} to {end_date})",
                 table_data,
                 columns=["Inspection Date", "Inspection ID", "Volume (bbl)", "Classification"],
             )
 
-            ans = (
-                f"**{wid} has had {len(spills)} real oil spills totaling {total_vol} barrels** in the last 4 years.\n\n"
-                f"Note: There were 7 automated detections, but INS-0001-0070 (7 Mar 2024) was confirmed as rainwater mixed with soil "
-                f"(context note CTX-0001-001) and does not count."
-            )
+            ans = f"**{wid} has had {len(spills)} confirmed real oil spills totaling {total_vol} barrels** from {start_date} through {end_date}. Corrected false-positive detections are excluded."
 
             return {
                 "answer": ans,
@@ -915,35 +961,26 @@ class CopilotEngine:
                 "conflict": False,
             }
 
-        # Q5: How many days was well down in 2025?
-        if "days was" in lower and "down" in lower and "2025" in lower:
-            wid = well_match.group(0).upper() if well_match else "WELL-0001"
-            dt_res = get_well_downtime(wid, start="2025-01-01", end="2025-12-31")
+        # Single-well downtime uses the same metric and date resolver as fleet queries.
+        if well_match and intent_name == "downtime":
+            wid = intent.well_ids[0] if intent and intent.well_ids else well_match.group(0).upper()
+            start_date, end_date = _intent_period(intent, self.as_of, "this year")
+            dt_res = get_well_downtime(wid, start=start_date, end=end_date, as_of=end_date)
             downtime_days = dt_res["downtime_days"]
-
             citations = [
                 {
-                    "id": "cit-dt-2025",
+                    "id": f"cit-{reading.get('inspection_id')}",
                     "source_type": "inspection",
                     "source_file": f"assets/{wid}/inspections.jsonl",
-                    "excerpt": "Three non-producing weekly inspections: 24 Jul 2025 (prime mover tripped, MNT-0001-021), 16 Oct and 23 Oct 2025 (stuffing box leak, MNT-0001-023).",
+                    "record_id": reading.get("inspection_id"),
+                    "date": str(reading.get("inspected_at", ""))[:10],
+                    "excerpt": f"Non-producing inspection; counted {reading.get('downtime_days')} downtime days.",
                     "well_id": wid,
-                },
-                {
-                    "id": "cit-dt-rule",
-                    "source_type": "manual",
-                    "source_file": "fleet/well-types/T200.md",
-                    "section": "section 9.3",
-                    "excerpt": "Weekly inspection showing non-production counts as 7 days.",
-                },
+                }
+                for reading in dt_res.get("readings", []) if reading.get("status") == "not_producing"
             ]
-
-            ans = (
-                f"**{wid} was down for {downtime_days} days in 2025**, from three weekly inspections where it was not producing oil:\n\n"
-                f"• **24 Jul 2025**: Wellhead was 51.6 °C vs 43.1 °C air (only 8.5 °C warmer, below the 15 °C limit). Cause: prime mover trip (MNT-0001-021).\n"
-                f"• **16 and 23 Oct 2025**: Stuffing box packing leak (MNT-0001-023).\n\n"
-                f"Each weekly non-producing inspection counts as 7 days."
-            )
+            citations.append({"id": "cit-downtime-rule", "source_type": "manual", "source_file": dt_res["rule_citation"].split("#", 1)[0], "excerpt": "A weekly non-producing inspection counts as 7 downtime days."})
+            ans = f"**{wid} was down for {downtime_days} days from {start_date} through {end_date}**, based on {len([r for r in dt_res.get('readings', []) if r.get('status') == 'not_producing'])} non-producing inspections. Each qualifying inspection contributes seven days."
 
             return {
                 "answer": ans,
@@ -954,17 +991,20 @@ class CopilotEngine:
 
         # Q6: Which wells in area had the most downtime in last 4 months? Show a bar chart.
         if "most downtime" in lower or ("downtime in" in lower and ("bar chart" in lower or "last 4 months" in lower)):
-            area_name = "Northeast Block 7" if "block 7" in lower else "Northeast Block 8" if "block 8" in lower else "Southwest Block 24"
+            area_name = intent.area_name if intent and intent.area_name else None
+            start_date, end_date = _intent_period(intent, self.as_of, "last 4 months")
+            top_n = intent.limit if intent and intent.limit else (int(re.search(r"\b(\d+)\s+wells?\b", lower).group(1)) if re.search(r"\b(\d+)\s+wells?\b", lower) else 3)
             downtime = query_metric(
                 "downtime_days",
                 area=area_name,
-                date_phrase=(intent.date_phrase if intent and intent.date_phrase else "last 4 months"),
+                date_from=start_date,
+                date_to=end_date,
                 group_by="well",
                 reference_date=self.as_of,
             )
             top_wells = [
                 {"well_id": row["group"], "downtime_days": row["value"], "well_type": row["records"][0].get("well_type")}
-                for row in downtime["rows"][:3]
+                for row in downtime["rows"][:top_n]
             ]
 
             bar_data = [
@@ -978,7 +1018,7 @@ class CopilotEngine:
 
             viz = generate_visualization(
                 "bar",
-                f"Top Downtime Wells in {area_name} (Last 4 Months)",
+                f"Top Downtime Wells in {area_name or 'all areas'} ({start_date} to {end_date})",
                 bar_data,
                 x="well_id",
                 y="downtime_days",
@@ -987,7 +1027,7 @@ class CopilotEngine:
 
             summary_str = ", ".join([f"**{w['well_id']}**: {w['downtime_days']} days ({w['well_type']})" for w in top_wells])
             ans = (
-                f"In {area_name} from {downtime['filters']['date_from']} to {downtime['filters']['date_to']}, "
+                f"In {area_name or 'all areas'} from {downtime['filters']['date_from']} to {downtime['filters']['date_to']}, "
                 f"the wells with the most downtime are:\n\n{summary_str}."
             )
 
@@ -1011,9 +1051,9 @@ class CopilotEngine:
 
         # Q7: Show on a map every well in area with real spill in last 90 days
         if "heatmap" not in lower and "map" in lower and "spill" in lower:
-            area_name = "Northeast Block 8" if "block 8" in lower else "Northeast Block 7" if "block 7" in lower else "Southwest Block 24"
-            cutoff = (date.fromisoformat(self.as_of) - timedelta(days=90)).isoformat()
-            spills = get_all_real_spills(area_name=area_name, start_date=cutoff, as_of=self.as_of)
+            area_name = intent.area_name if intent and intent.area_name else None
+            start_date, end_date = _intent_period(intent, self.as_of, "last 90 days")
+            spills = get_all_real_spills(area_name=area_name, start_date=start_date, end_date=end_date, as_of=end_date)
 
             map_data = [
                 {
@@ -1030,12 +1070,13 @@ class CopilotEngine:
 
             viz = generate_visualization(
                 "map",
-                f"Spills in {area_name} (Last 90 Days)",
-                map_data,
+                f"Spills in {area_name or 'all areas'} ({start_date} to {end_date})",
+                list({row["well_id"]: row for row in reversed(map_data)}.values()),
                 columns=["well_id", "date", "volume_bbl", "latitude", "longitude"],
             )
 
-            ans = f"Found **{len(spills)} wells** in {area_name} with real oil spills in the last 90 days ({cutoff} to {self.as_of})."
+            well_count = len({spill["well_id"] for spill in spills})
+            ans = f"Found **{well_count} wells** in {area_name or 'all areas'} with real oil spills from {start_date} through {end_date}."
 
             citations = [
                 {
@@ -1060,18 +1101,24 @@ class CopilotEngine:
         # Q8: Heatmap of spills by geographic area and month
         if "heatmap" in lower and "spill" in lower:
             target_year = intent.year if intent and intent.year else int(self.as_of[:4])
+            year_end = self.as_of if target_year == int(self.as_of[:4]) else f"{target_year}-12-31"
             hm_result = query_metric(
                 "spill_volume",
                 date_from=f"{target_year}-01-01",
-                date_to=self.as_of,
+                date_to=year_end,
                 group_by="area",
                 reference_date=self.as_of,
             )
-            month_labels = sorted({str(record.get("date", ""))[:7] for record in hm_result["records"] if record.get("date")})
-            area_rows: dict[str, dict[str, Any]] = {}
+            end_month = date.fromisoformat(hm_result["filters"]["date_to"]).month
+            month_labels = [calendar.month_abbr[month] for month in range(1, end_month + 1)]
+            area_rows: dict[str, dict[str, Any]] = {
+                str(row.get("name")): {"Area": str(row.get("name")), "Total": 0}
+                for row in query_records("area")
+            }
             for record in hm_result["records"]:
-                month = str(record.get("date", ""))[:7]
-                if not month:
+                try:
+                    month = date.fromisoformat(str(record.get("date", ""))[:10]).strftime("%b")
+                except ValueError:
                     continue
                 row = area_rows.setdefault(str(record.get("area")), {"Area": str(record.get("area")), "Total": 0})
                 row[month] = int(row.get(month, 0)) + 1
@@ -1111,46 +1158,11 @@ class CopilotEngine:
                 "conflict": False,
             }
 
-        # Q9: Which rules has well broken in last 12 months, and what is still open?
+        # Compliance findings are assembled from inspections, reports, regulator events, and SOPs.
         if (intent_name == "compliance" or "rules" in lower or "broken" in lower or "breach" in lower or "compliance" in lower) and well_match:
-            wid = well_match.group(0).upper()
-            ans = (
-                f"**Compliance Breaches & Open Actions for {wid} (Last 12 Months)**:\n\n"
-                f"Four breaches, all stemming from the 11 Jun 2026 spill of 6.8 bbl (USD 5,000 fine, still open):\n\n"
-                f"1. **SR-01 (Late Written Report)**: Reported after 41 hours (REG-0001-001) against the 24-hour SOP limit. Led to Notice of Violation REG-0001-002 with a USD 5,000 fine, currently open.\n"
-                f"2. **SR-02 (Late Containment)**: Contained after ~7 hours, against the 4-hour limit (recorded in the June repair report).\n"
-                f"3. **SR-03 (Unverified Remediation)**: Agency cleanup verification was due by 10 Aug 2026 and remains open (REG-0001-003).\n"
-                f"4. **RC-04 (Unanswered NOV)**: Notice of violation required a written response by 30 Jul 2026, and none is on record.\n\n"
-                f"**Pending Actions (Not yet breaches)**:\n"
-                f"• **RCA due on flowline**: 3 corrective repairs in the last 12 months (MNT-0001-028, -029, -032). Repair report marks RCA as 'Action required'.\n"
-                f"• **Unrecorded planned shut-in**: Shut-in from 7 Oct not yet recorded in maintenance system (required by T200 manual before work starts).\n\n"
-                f"• Yearly flowline test (**RC-02**) was completed on 7 Mar 2026 (compliant)."
-            )
+            from backend.app.pipeline.answer import _compliance_answer
 
-            citations = [
-                {"id": "cit-reg-1", "source_type": "regulatory", "source_file": f"assets/{wid}/regulatory-events.jsonl", "record_id": "REG-0001-001", "excerpt": "Spill report filed after 41 hours."},
-                {"id": "cit-reg-2", "source_type": "regulatory", "source_file": f"assets/{wid}/regulatory-events.jsonl", "record_id": "REG-0001-002", "excerpt": "Notice of Violation: USD 5,000 fine, open."},
-                {"id": "cit-reg-3", "source_type": "regulatory", "source_file": f"assets/{wid}/regulatory-events.jsonl", "record_id": "REG-0001-003", "excerpt": "Remediation verification pending."},
-                {"id": "cit-sop-sr", "source_type": "manual", "source_file": "fleet/sops/spill-response-sop.md", "section": "SR-01, SR-02, SR-03", "excerpt": "24h reporting, 4h containment, 60d verification."},
-                {"id": "cit-sop-rc", "source_type": "manual", "source_file": "fleet/sops/regulatory-compliance-sop.md", "section": "RC-04", "excerpt": "30 days NOV response deadline."},
-            ]
-
-            table_data = [
-                {"Rule": "SR-01", "Status": "Violation", "Details": "Report filed at 41h (limit 24h)"},
-                {"Rule": "SR-02", "Status": "Violation", "Details": "Contained at 7h (limit 4h)"},
-                {"Rule": "SR-03", "Status": "Violation", "Details": "Verification due 10 Aug, still open"},
-                {"Rule": "RC-04", "Status": "Violation", "Details": "NOV response due 30 Jul, none filed"},
-                {"Rule": "RCA", "Status": "Action Required", "Details": "3 corrective flowline repairs in 12m"},
-                {"Rule": "RC-02", "Status": "Compliant", "Details": "Annual test passed 7 Mar 2026"},
-            ]
-            viz = generate_visualization("table", f"{wid} Compliance Status", table_data)
-
-            return {
-                "answer": ans,
-                "citations": citations,
-                "visualization": viz,
-                "conflict": False,
-            }
+            return _compliance_answer(well_match.group(0).upper(), self.as_of)
 
         # Q10: Spills not contained within SOP limit in area
         if intent_name == "containment_breach" or "not contained" in lower or ("contained" in lower and "limit" in lower):
@@ -1224,7 +1236,12 @@ class CopilotEngine:
         # Q14: Pump jack RCA wells in area
         if intent_name == "rca" or "root-cause" in lower or "rca" in lower:
             area_name = intent.area_name if intent and intent.area_name else None
-            wells_rca = find_maintenance_patterns(area=area_name, as_of=self.as_of)
+            wells_rca = find_maintenance_patterns(
+                area=area_name,
+                well_type=intent.well_type if intent else None,
+                well_id=well_match.group(0).upper() if well_match else None,
+                as_of=self.as_of,
+            )
 
             table_data = [
                 {
@@ -1266,18 +1283,18 @@ class CopilotEngine:
 
         # Q15: Which spills in area in last 90 days needed a report to the regulator?
         if "needed a report" in lower or "reportable" in lower:
-            area_name = "Northeast Block 8" if "block 8" in lower else "Northeast Block 7"
-            cutoff = (date.fromisoformat(self.as_of) - timedelta(days=90)).isoformat()
-            spills = get_all_real_spills(area_name=area_name, start_date=cutoff, as_of=self.as_of)
-            reportable = [s for s in spills if s.get("volume_bbl", 0) >= 5.0]
+            area_name = intent.area_name if intent and intent.area_name else None
+            start_date, end_date = _intent_period(intent, self.as_of, "last 90 days")
+            spills = get_all_real_spills(area_name=area_name, start_date=start_date, end_date=end_date, as_of=end_date)
+            reportable = [s for s in spills if s.get("external_report_required")]
 
             if reportable:
                 s = reportable[0]
                 ans = (
-                    f"**{s['well_id']}** is the only well in {area_name} with a spill requiring a regulator report in the last 90 days "
+                    f"**{s['well_id']}** had a spill requiring a regulator report in {area_name or 'the selected fleet'} "
                     f"({s['volume_bbl']} bbl on {s['date']}, following the volume correction).\n\n"
-                    f"No written notice is recorded on file, so this is flagged as an overdue report under SR-01. "
-                    f"No other spill in this area reached the 5 bbl threshold."
+                    f"A written notice is not recorded for this spill, so it is flagged as a possible SR-01 breach. "
+                    f"{len(reportable)} reportable spill(s) were found in the selected period."
                 )
                 citations = [
                     {
@@ -1297,7 +1314,7 @@ class CopilotEngine:
                     },
                 ]
             else:
-                ans = f"No spills in {area_name} reached the 5 bbl reportable threshold in the last 90 days."
+                ans = f"No spill requiring a regulator report was found in {area_name or 'the selected fleet'} from {start_date} through {end_date}."
                 citations = []
 
             return {

@@ -585,5 +585,14 @@ input, textarea, select { font: inherit; }
 @media (max-width: 640px) {
   .topbar__sub { display: none; }
   .corrections-sidebar { width: 100%; position: fixed; inset: 52px 0 0 0; z-index: 50; }
-  .example-chips__chip { max-width: 200px; }
+  .example-chips__chip { max-width: 240px; }
+}
+
+@media (max-width: 420px) {
+  .topbar { padding: 0 10px; }
+  .topbar__title { font-size: 13px; }
+  .chat-thread__messages { padding: 10px; }
+  .chat-thread__input-box { padding: 8px 10px; }
+  .message-bubble { max-width: 95%; }
+  .modal { width: 95%; }
 }

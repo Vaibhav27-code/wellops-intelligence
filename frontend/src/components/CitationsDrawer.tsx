@@ -18,8 +18,9 @@ const iconFor = (type: Citation['source_type']) => {
   }
 };
 
-const labelFor = (type: Citation['source_type']) => {
-  const map: Record<Citation['source_type'], string> = {
+const labelFor = (type?: string) => {
+  if (!type) return 'Source Document';
+  const map: Record<string, string> = {
     well: 'Well Record',
     inspection: 'Inspection',
     repair: 'Repair Report',
@@ -58,11 +59,11 @@ export function CitationsDrawer({ citations, onClose }: CitationsDrawerProps) {
                 </span>
               )}
             </div>
-            {c.source_file && (
+            {(c.source_file || c.filename) && (
               <div className="citations-drawer__file">
-                📄 {c.source_file}
+                📄 {c.source_file || c.filename}
                 {c.section && <> · {c.section}</>}
-                {c.record_id && <> · ID {c.record_id}</>}
+                {(c.record_id || c.id) && <> · ID {c.record_id || c.id}</>}
               </div>
             )}
             {c.date && (

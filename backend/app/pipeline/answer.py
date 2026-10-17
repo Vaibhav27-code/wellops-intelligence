@@ -506,7 +506,8 @@ def _compliance_answer(well_id: str, as_of: str) -> dict[str, Any]:
     if not rows:
         answer = f"No confirmed or potential violations were found for {well_id} as of {as_of} using the available records."
     else:
-        answer = f"Found {len(rows)} confirmed or potential compliance issues for {well_id} as of {as_of}."
+        protocols = ", ".join(dict.fromkeys(str(row["protocol_id"]) for row in rows))
+        answer = f"Found {len(rows)} confirmed or potential compliance issues for {well_id} as of {as_of}: {protocols}."
     if fine_total:
         answer += f" Recorded NOV fine total: USD {fine_total:,.0f}."
     return {

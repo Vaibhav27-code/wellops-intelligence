@@ -61,8 +61,9 @@ export interface HumanNote {
 
 export interface Citation {
   id: string;
-  source_type: 'well' | 'inspection' | 'repair' | 'regulatory' | 'note' | 'manual' | 'correction';
+  source_type?: 'well' | 'inspection' | 'repair' | 'regulatory' | 'note' | 'manual' | 'correction' | string;
   source_file?: string;
+  filename?: string;
   record_id?: string;
   section?: string;
   excerpt?: string;
@@ -87,16 +88,23 @@ export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   citations?: Citation[];
-  visualization?: VisualizationSpec;
+  visualization?: VisualizationSpec | null;
   timestamp: string;
   conflict?: boolean;
+  conflicts?: string[];
+  conflict_message?: string;
+  calculation_explanation?: string;
+  data_as_of?: string;
 }
 
 // ─── Users & Memory ───────────────────────────────────────────────────────────
 
 export interface AppUser {
   user_id: string;
+  name?: string;
   display_name: string;
+  role?: string;
+  team_id?: string;
   avatar_color: string;
 }
 
@@ -124,8 +132,13 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   answer: string;
+  answer_text?: string;
   citations: Citation[];
-  visualization?: VisualizationSpec;
+  visualization?: VisualizationSpec | null;
   conflict?: boolean;
   conflict_message?: string;
+  conflicts?: string[];
+  calculation_explanation?: string;
+  data_as_of?: string;
+  intent?: Record<string, unknown>;
 }

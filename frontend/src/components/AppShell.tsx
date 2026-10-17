@@ -1,10 +1,41 @@
+import React from 'react';
 import { useStore } from '../store';
+import { api } from '../api/client';
 import { UserPicker } from './UserPicker';
 import { ChatThread } from './ChatThread';
-import { Activity, FlaskConical, Menu, X } from 'lucide-react';
+import { Activity, FlaskConical, Menu, X, RefreshCw } from 'lucide-react';
+import type { Correction } from '../types';
 
 export function AppShell() {
-  const { corrections, isSidebarOpen, toggleSidebar } = useStore();
+  const { corrections, setCorrections, isSidebarOpen, toggleSidebar } = useStore();
+
+  const fetchCorrections = React.useCallback(() => {
+    api
+      .getCorrections()
+      .then((res) => {
+        if (res.corrections) {
+          const mapped: Correction[] = res.corrections.map((raw: any) => ({
+            correction_id: raw.correction_id || `corr-${Math.random()}`,
+            scope: raw.scope || 'well',
+            well_id: raw.well_id,
+            well_type: raw.well_type,
+            field: raw.field,
+            original_value: raw.original_value,
+            corrected_value: raw.corrected_value,
+            author: raw.author,
+            created_at: raw.created_at || new Date().toISOString(),
+            reason: raw.reason,
+            evidence: raw.evidence,
+          }));
+          setCorrections(mapped);
+        }
+      })
+      .catch((err) => console.warn('Could not fetch shared corrections:', err));
+  }, [setCorrections]);
+
+  React.useEffect(() => {
+    fetchCorrections();
+  }, [fetchCorrections]);
 
   return (
     <div className="app-shell">
@@ -42,9 +73,18 @@ export function AppShell() {
         {/* Corrections sidebar */}
         {isSidebarOpen && (
           <aside className="corrections-sidebar" aria-label="Corrections log">
-            <div className="corrections-sidebar__header">
-              <FlaskConical size={16} />
-              Shared Corrections
+            <div className="corrections-sidebar__header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <FlaskConical size={16} />
+                <span>Audited Corrections Log</span>
+              </div>
+              <button
+                onClick={fetchCorrections}
+                style={{ padding: '4px', borderRadius: '4px', color: 'var(--c-text-muted)', display: 'flex', alignItems: 'center' }}
+                title="Refresh audit log"
+              >
+                <RefreshCw size={13} />
+              </button>
             </div>
             {corrections.length === 0 ? (
               <p className="corrections-sidebar__empty">No corrections recorded yet.</p>
