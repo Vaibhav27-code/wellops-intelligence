@@ -47,6 +47,12 @@ def _truth_totals(root: Path, reference: str) -> dict[str, float]:
         match = re.search(r"at least\s+\*\*(\d+(?:\.\d+)?)\s*°?\s*C\s+above\s+ambient", text, re.IGNORECASE)
         if not match:
             match = re.search(r"at least\s+\*\*(\d+(?:\.\d+)?)\s*°?\s*C\s+above\s*\n?\s*ambient", text, re.IGNORECASE)
+        if not match:
+            match = re.search(
+                r"exceeds?\s+ambient(?:\s+temperature)?\s+by\s+a\s+minimum\s+of\s+\*\*(\d+(?:\.\d+)?)\s*°?\s*C",
+                text,
+                re.IGNORECASE,
+            )
         assert match, f"No manual threshold parsed for {well_type}"
         thresholds[well_type] = float(match.group(1))
     joined = inspections.merge(wells[["asset_id", "well_type"]], on="asset_id", how="left")
@@ -169,6 +175,54 @@ def _mutate_dataset(source_root: Path, destination: Path) -> Path:
         if removed >= 5:
             break
     assert removed == 5
+
+    areas_path = destination / "fleet" / "areas.json"
+    areas_payload = json.loads(areas_path.read_text(encoding="utf-8"))
+    area = areas_payload["areas"][0]
+    new_asset_id = "SIM-ASSET-NEW-1"
+    area.setdefault("asset_ids", []).append(new_asset_id)
+    areas_path.write_text(json.dumps(areas_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    template_path = next((destination / "assets").glob("*/metadata.json"))
+    metadata = json.loads(template_path.read_text(encoding="utf-8"))
+    metadata.update(
+        {
+            "asset_id": new_asset_id,
+            "name": "New simulation well",
+            "well_type": "T500",
+            "area_id": area["area_id"],
+            "team_id": area["team_id"],
+        }
+    )
+    new_asset = destination / "assets" / new_asset_id
+    new_asset.mkdir(parents=True)
+    (new_asset / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    latest_inspection_date = max(
+        str(row["inspected_at"])[:10]
+        for path in (destination / "assets").glob("*/inspections.jsonl")
+        for row in _jsonl(path)
+    )
+    simulated_inspection = {
+        "inspection_id": "SIM-INS-NEW-1",
+        "asset_id": new_asset_id,
+        "inspected_at": f"{latest_inspection_date}T07:00:00Z",
+        "ambient_temp_c": 18,
+        "wellhead_temp_c": 35,
+        "spill_detected": False,
+        "spill_est_volume_bbl": None,
+    }
+    (new_asset / "inspections.jsonl").write_text(
+        json.dumps(simulated_inspection, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    for filename in ("maintenance.jsonl", "regulatory-events.jsonl", "context.jsonl"):
+        (new_asset / filename).write_text("", encoding="utf-8")
+
+    (destination / "fleet" / "well-types" / "T500.md").write_text(
+        "# T500 Simulation Well Manual\n\n## 1. Production threshold\n\n"
+        "A T500 unit is producing when its wellhead exceeds ambient temperature by a minimum of **18°C**.\n",
+        encoding="utf-8",
+    )
     return destination
 
 
@@ -186,4 +240,7 @@ def test_mutated_unseen_dataset_matches_independent_ground_truth(
 
     simulated_reference = get_reference_date(database)
     assert simulated_reference == (date.fromisoformat(source_reference) + timedelta(days=180)).isoformat()
+    from backend.app.calc.rules import load_production_rule
+
+    assert load_production_rule("T500", simulated_root).minimum_delta_c == 18
     _assert_metric_totals_match(simulated_root, simulated_reference)
