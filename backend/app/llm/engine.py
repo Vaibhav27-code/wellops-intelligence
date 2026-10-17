@@ -37,7 +37,15 @@ def _user_display_name(user_id: str | None) -> str:
     if not user_id:
         return "Unknown inspector"
     users = query_records("user")
-    user = next((row for row in users if row.get("user_id") == user_id), None)
+    normalize = lambda value: re.sub(r"[^a-z0-9]", "", str(value).casefold())
+    user = next(
+        (
+            row for row in users
+            if row.get("user_id") == user_id
+            or normalize(row.get("name", "")) == normalize(user_id)
+        ),
+        None,
+    )
     return str(user.get("name")) if user and user.get("name") else user_id
 
 
@@ -153,18 +161,27 @@ class CopilotEngine:
     ) -> dict[str, Any] | None:
         lower = q.lower()
 
-        # Q12: Temperature correction for WELL-0164 (or similar raw data corrections)
-        if "faulty" in lower or ("re-measured" in lower and "wellhead" in lower) or ("reading for" in lower and "wrong" in lower):
+        # Apply a temperature correction to a matching source inspection.
+        temperature_correction = (
+            any(term in lower for term in ("wrong", "faulty", "correct", "re-measured", "remeasured", "measured"))
+            and any(term in lower for term in ("wellhead", "temperature", "°c"))
+        )
+        if temperature_correction:
             well_match = re.search(r"\bWELL-(\d{4})\b", q, re.I)
-            temp_match = re.search(r"(\d+(?:\.\d+)?)\s*°?C", q)
-            if well_match and temp_match:
+            temp_matches = re.findall(r"(\d+(?:\.\d+)?)\s*°?C", q, re.IGNORECASE)
+            if well_match and temp_matches:
                 wid = well_match.group(0).upper()
-                new_temp = float(temp_match.group(1))
+                new_temp = float(temp_matches[-1])
 
-                # Find latest inspection for this well
-                insp = get_latest_inspection(wid)
-                iid = insp.get("inspection_id") if insp else None
-                orig_temp = insp.get("wellhead_temp_c") if insp else None
+                readings = query_records("inspection", asset_id=wid, order_by_event=True)
+                target_date = _question_date(q, self.as_of)
+                if target_date:
+                    readings = [row for row in readings if str(row.get("inspected_at", ""))[:10] == target_date]
+                insp = readings[-1] if readings else None
+                if not insp:
+                    return {"answer": f"I could not find an inspection for {wid} matching the requested reading date.", "citations": [], "visualization": None}
+                iid = insp.get("inspection_id")
+                orig_temp = insp.get("wellhead_temp_c")
 
                 record_correction(
                     mem_conn,
@@ -176,23 +193,30 @@ class CopilotEngine:
                     corrected_value=new_temp,
                     author=user_id,
                     reason=q,
-                    evidence="Field crew re-measurement",
+                    evidence="User-reported re-measurement",
                 )
 
-                # Re-evaluate WELL-0164 status with corrected temp
-                well_det = get_well_details(wid, as_of=self.as_of)
-                delta = well_det.get("temperature_delta_c")
-                threshold = well_det.get("threshold_delta_c")
-                ambient = well_det.get("latest_inspection", {}).get("ambient_temp_c")
+                well_meta = query_records("well", asset_id=wid)
+                well_type = str(well_meta[0].get("well_type", "")) if well_meta else ""
+                rule = load_production_rule(well_type, self.sample_root)
+                threshold = rule.minimum_delta_c
+                ambient = insp.get("ambient_temp_c")
+                delta = round(float(new_temp) - float(ambient), 2) if isinstance(ambient, (int, float)) else None
+                producing = delta is not None and delta >= threshold
+                note = str(insp.get("notes", "")).strip()
+                note_conflict = producing and bool(re.search(r"\b(not moving|stopped|shut[- ]?in|offline|not producing)\b", note, re.IGNORECASE))
+                status_text = "producing oil" if producing else "not producing oil"
 
                 ans = (
                     f"Recorded correction against inspection {iid}: wellhead temperature updated from "
                     f"{orig_temp} °C to {new_temp} °C (corrected by {user_id}).\n\n"
-                    f"With {new_temp} °C against {ambient} °C air ({delta} °C warmer, above the {threshold} °C limit), "
-                    f"**{wid} is producing oil**.\n\n"
-                    f"⚠️ **Note Conflict**: The same inspection record includes the note \"Pump jack not moving.\" (by Tyler Hughes), "
-                    f"which disagrees with this correction. Please confirm if the well is actively pumping."
+                    f"With {new_temp} °C against {ambient} °C air ({delta} °C delta; the {well_type} limit is {threshold} °C), "
+                    f"**{wid} is {status_text}**."
                 )
+                if note:
+                    ans += f"\n\nThe same inspection includes the field note: \"{note}\"."
+                if note_conflict:
+                    ans += " This evidence disagrees with the corrected reading; please confirm the well status in the field."
 
                 citations = [
                     {
@@ -207,9 +231,8 @@ class CopilotEngine:
                     {
                         "id": f"cit-rule",
                         "source_type": "manual",
-                        "source_file": "fleet/well-types/T200.md",
-                        "section": "section 9.3",
-                        "excerpt": "A T200 well is considered producing when wellhead is at least 15 °C above ambient.",
+                        "source_file": rule.citation.split("#", 1)[0],
+                        "excerpt": f"A {well_type} well is considered producing when wellhead is at least {threshold} °C above ambient.",
                     },
                 ]
 
@@ -217,23 +240,28 @@ class CopilotEngine:
                     "answer": ans,
                     "citations": citations,
                     "visualization": None,
-                    "conflict": True,
-                    "conflict_message": "Inspection notes disagree with thermal gun re-measurement.",
+                    "conflict": note_conflict,
+                    "conflict_message": "Inspection note disagrees with the corrected temperature reading." if note_conflict else None,
                 }
 
-        # Q13: Spill volume correction (e.g. WELL-0151 4.5 bbl to 5.4 bbl)
-        if "spill at" in lower and ("estimated" in lower or "measured" in lower or "field crew measured" in lower):
+        # Apply an explicit spill-volume correction to its matching inspection.
+        if "spill" in lower and any(term in lower for term in ("estimated", "measured", "correct", "wrong")):
             well_match = re.search(r"\bWELL-\d{4}\b", q, re.I)
             vols = re.findall(r"(\d+(?:\.\d+)?)\s*bbl", q)
             if well_match and vols:
                 wid = well_match.group(0).upper()
                 new_vol = float(vols[-1])
-
-                # Find relevant spill inspection
-                spills = get_all_real_spills(well_id=wid, as_of=self.as_of)
-                target_spill = spills[-1] if spills else None
-                iid = target_spill.get("inspection_id") if target_spill else "INS-0151-0201"
-                orig_vol = target_spill.get("volume_bbl") if target_spill else 4.5
+                target_date = _question_date(q, self.as_of)
+                inspections = query_records("inspection", asset_id=wid, order_by_event=True)
+                candidates = [row for row in inspections if row.get("spill_detected")]
+                if target_date:
+                    candidates = [row for row in candidates if str(row.get("inspected_at", ""))[:10] == target_date]
+                inspection = candidates[-1] if candidates else None
+                if not inspection:
+                    return {"answer": f"I could not find a spill inspection for {wid} matching the requested correction.", "citations": [], "visualization": None}
+                iid = str(inspection.get("inspection_id"))
+                original_volume = inspection.get("spill_est_volume_bbl")
+                orig_vol = original_volume
 
                 record_correction(
                     mem_conn,
@@ -245,74 +273,115 @@ class CopilotEngine:
                     corrected_value=new_vol,
                     author=user_id,
                     reason=q,
-                    evidence="Field crew direct measurement",
+                    evidence="User-reported field measurement",
                 )
 
-                ans = (
-                    f"Recorded corrected volume of **{new_vol} bbl** against inspection {iid} (previously {orig_vol} bbl, corrected by {user_id}).\n\n"
-                    f"• Under the Spill Response SOP (SR-01), spills of **5.0 bbl or more are reportable** to the State Oil & Gas Commission within 24 hours.\n"
-                    f"• A written notice was due within 24 hours of discovery, and **none is recorded**. Flagged as a possible **SR-01 breach**.\n"
-                    f"• Repair report MNT-0151-025 classed this spill as 'moderate' based on the old 4.5 bbl estimate; that classification no longer holds.\n"
-                    f"• Containment took ~6.4 hours (an **SR-02 breach**, exceeding the 4-hour limit).\n"
-                    f"• Because it is now a reportable spill, agency verification of cleanup (**SR-03**) is due within 60 days (by 23 Nov 2026)."
-                )
-
-                citations = [
+                rules = load_spill_rules(self.sample_root)
+                compliance_rules = load_compliance_rules(str(self.sample_root))
+                corrected_inspection = {**inspection, "spill_est_volume_bbl": new_vol}
+                spill = assess_spill(corrected_inspection, query_records("context", asset_id=wid), rules, as_of=self.as_of)
+                inspection_date = str(inspection.get("inspected_at", ""))[:10]
+                pieces = [
+                    f"Recorded corrected volume of **{new_vol} bbl** against inspection {iid} "
+                    f"(previously {orig_vol} bbl, recorded by {user_id}).",
+                ]
+                citation_rows = [
                     {
                         "id": f"cit-{iid}",
                         "source_type": "inspection",
                         "source_file": f"assets/{wid}/inspections.jsonl",
                         "record_id": iid,
-                        "excerpt": f"Initial estimated volume: {orig_vol} bbl. Corrected to {new_vol} bbl.",
+                        "excerpt": f"Estimated spill volume {orig_vol} bbl; corrected to {new_vol} bbl.",
                         "well_id": wid,
+                        "date": inspection_date,
                     },
                     {
-                        "id": "cit-sr01",
+                        "id": "cit-spill-sop",
                         "source_type": "manual",
                         "source_file": "fleet/sops/spill-response-sop.md",
-                        "section": "section 3 & 4 (SR-01)",
-                        "excerpt": "Reportable spills (5 bbl to below 25 bbl) require written notice within 24 hours.",
-                    },
-                    {
-                        "id": "cit-sr02",
-                        "source_type": "manual",
-                        "source_file": "fleet/sops/spill-response-sop.md",
-                        "section": "section 4 (SR-02, SR-03)",
-                        "excerpt": "Source must be stopped and contained within 4 hours. Remediation verified within 60 days.",
+                        "excerpt": "Spill classification, reporting, containment, and verification limits are defined in this SOP.",
                     },
                 ]
+                if spill and spill.get("external_report_required"):
+                    events = query_records("regulatory_event", asset_id=wid)
+                    report_event = next(
+                        (event for event in events if event.get("event_type") == "spill_report_filed" and event.get("related_inspection_id") == iid),
+                        None,
+                    )
+                    deadline_hours = float(spill["report_deadline_hours"])
+                    if report_event:
+                        hours = report_event.get("hours_to_report")
+                        if isinstance(hours, (int, float)) and hours > deadline_hours:
+                            pieces.append(f"The spill is {spill['classification']} and was reported after {hours:g} hours, beyond the {deadline_hours:g}-hour SR-01 deadline.")
+                        else:
+                            pieces.append(f"The spill is {spill['classification']}; a report record exists with filing time {hours} hours against the {deadline_hours:g}-hour SR-01 deadline.")
+                        citation_rows.append({"id": f"cit-{report_event.get('event_id')}", "source_type": "regulatory", "source_file": f"assets/{wid}/regulatory-events.jsonl", "record_id": report_event.get("event_id"), "excerpt": f"Spill report filing time: {hours} hours."})
+                    else:
+                        due = datetime.fromisoformat(str(inspection.get("inspected_at", "")).replace("Z", "+00:00")) + timedelta(hours=deadline_hours)
+                        pieces.append(f"The corrected volume is reportable under SR-01; no filing is recorded by the {deadline_hours:g}-hour deadline ({due.isoformat()}).")
+                else:
+                    pieces.append(f"The corrected spill class is {spill.get('classification') if spill else 'unknown'} and does not require an external SR-01 report under the available SOP rules.")
+
+                maintenance = query_records("maintenance", asset_id=wid)
+                related = next((row for row in maintenance if row.get("triggered_by_inspection_id") == iid), None)
+                if related and related.get("report_file"):
+                    connection = get_connection()
+                    try:
+                        report = connection.execute(
+                            "SELECT content FROM documents WHERE source_path = ?",
+                            (str(related["report_file"]).replace("\\", "/"),),
+                        ).fetchone()
+                    finally:
+                        connection.close()
+                    if report:
+                        match = re.search(r"\bcontained\s+(?:(?:about|approximately)\s+)?(\d+(?:\.\d+)?)\s+hours? after (?:the )?inspection(?:\s+flight)?\b", report["content"], re.IGNORECASE)
+                        if match:
+                            hours = float(match.group(1))
+                            limit = compliance_rules.spill_containment_hours
+                            status = "exceeds" if hours > limit else "meets"
+                            pieces.append(f"The linked repair report records containment after {hours:g} hours, which {status} the {limit:g}-hour SR-02 limit.")
+                            citation_rows.append({"id": f"cit-{related.get('maintenance_id')}", "source_type": "repair", "source_file": str(related.get("report_file")), "record_id": related.get("maintenance_id"), "excerpt": match.group(0), "well_id": wid})
+                verification_classes = (*rules.reportable_class_names, rules.major_class_name)
+                if spill and spill.get("classification") in verification_classes:
+                    due_date = date.fromisoformat(inspection_date) + timedelta(days=compliance_rules.spill_verification_days)
+                    pieces.append(f"SR-03 agency verification is due by {due_date.isoformat()} ({compliance_rules.spill_verification_days} days after discovery).")
+
+                ans = "\n\n".join(pieces)
 
                 return {
                     "answer": ans,
-                    "citations": citations,
+                    "citations": citation_rows,
                     "visualization": None,
                     "conflict": False,
                 }
 
-        # Q14: Rule for a whole well type (e.g. T350 pump jack RCA threshold override)
-        if "note for all" in lower and "root-cause" in lower:
-            wt_match = re.search(r"\b(T200|T350)\b", q, re.I)
+        # Store a rule override at the well-type scope described in the message.
+        if ("for all" in lower or "all " in lower or "team now wants" in lower) and ("root-cause" in lower or "rca" in lower):
+            wt_match = re.search(r"\bT\d{3}\b", q, re.I)
             num_match = re.search(r"(\d+)\s+repairs", q, re.I)
             if wt_match and num_match:
                 wtype = wt_match.group(1).upper()
                 threshold = int(num_match.group(1))
+                equipment_match = re.search(r"\b(pump[ -]?jack|flowline|motor|compressor)\b", lower)
+                equipment = equipment_match.group(1).replace(" ", "_").replace("-", "_") if equipment_match else "pump_jack"
+                standard_rule = load_rca_rule(wtype, self.sample_root)
 
                 record_correction(
                     mem_conn,
                     scope="well_type",
                     well_type=wtype,
                     field="rca_threshold",
-                    original_value=3,
+                    original_value=standard_rule.minimum_corrective_events,
                     corrected_value=threshold,
                     author=user_id,
                     reason=q,
-                    equipment_kind="pump_jack",
+                    equipment_kind=equipment,
                 )
 
                 ans = (
-                    f"Recorded team rule override for **all {wtype} wells**: pump jack root-cause analysis (RCA) "
+                    f"Recorded team rule override for **all {wtype} wells**: {equipment.replace('_', ' ')} root-cause analysis (RCA) "
                     f"is now triggered after **{threshold} corrective repairs** (author: {user_id}).\n\n"
-                    f"This team rule overrides the standard manual threshold (3 repairs) for {wtype} wells only. "
+                    f"This team rule overrides the standard manual threshold ({standard_rule.minimum_corrective_events} repairs) for {wtype} wells only. "
                     f"Other well types continue to follow their standard manual rules."
                 )
 
@@ -323,8 +392,7 @@ class CopilotEngine:
                             "id": "cit-manual",
                             "source_type": "manual",
                             "source_file": f"fleet/well-types/{wtype}.md",
-                            "section": "section 6",
-                            "excerpt": "Standard RCA threshold: 3 corrective maintenance events in 12 months.",
+                            "excerpt": f"Standard RCA threshold: {standard_rule.minimum_corrective_events} corrective maintenance events in {standard_rule.window_months} months.",
                         }
                     ],
                     "visualization": None,
@@ -332,7 +400,7 @@ class CopilotEngine:
                 }
 
         # Q16: Shared shut-in announcement (e.g. Jake Morales: FYI for everyone: WELL-0007 shut in from 17 Oct...)
-        if "fyi for everyone" in lower or ("planned workover" in lower and "shut in" in lower):
+        if "for everyone" in lower and any(term in lower for term in ("shut in", "shut-in", "workover", "planned downtime")):
             well_match = re.search(r"\bWELL-(\d{4})\b", q, re.I)
             wid = well_match.group(0).upper() if well_match else None
             record_shared_note(
@@ -534,8 +602,8 @@ class CopilotEngine:
     ) -> dict[str, Any] | None:
         lower = q.lower()
 
-        # Q11 & Q16: "For the three wells we discussed yesterday, what have repairs cost this year?"
-        if "three wells we discussed" in lower or ("wells we discussed" in lower and "cost" in lower):
+        # Resolve conversational references only from the current user's private history.
+        if ("wells we discussed" in lower or "wells from our last" in lower) and any(word in lower for word in ("cost", "repairs", "maintenance")):
             history = retrieve_private_memory(mem_conn, user_id=user_id, limit=50)
 
             # Check if THIS user had a prior conversation mentioning the three wells
@@ -555,32 +623,32 @@ class CopilotEngine:
                         three_wells = v_wells[:3]
                         break
 
-            # If user has no such history (like Jessica Reed in Q16)
             if not three_wells:
-                # If user is Michael Turner, fallback to the Q6 wells if he just asked in test
-                if user_id.lower() in ("michael turner", "u-101", "michael"):
-                    three_wells = ["WELL-0121", "WELL-0138", "WELL-0107"]
-                else:
-                    return {
-                        "answer": (
-                            f"I have no record of an earlier conversation with you ({user_id}) discussing three wells. "
-                            f"Each user's conversation history is kept private."
-                        ),
-                        "citations": [],
-                        "visualization": None,
-                        "conflict": False,
-                    }
+                return {
+                    "answer": (
+                        f"I have no record of an earlier conversation with you ({_user_display_name(user_id)}) discussing those wells. "
+                        f"Each user's conversation history is kept private."
+                    ),
+                    "citations": [],
+                    "visualization": None,
+                    "conflict": False,
+                }
 
-            # Calculate repair costs for 2026 for each well
+            year = int(self.as_of[:4])
+            year_start, year_end = f"{year}-01-01", self.as_of
             costs_data = []
             citations = []
             for wid in three_wells:
-                cost_res = get_well_repairs_cost(wid, year=2026)
+                cost_res = query_metric(
+                    "repair_cost", well_id=wid, date_from=year_start, date_to=year_end,
+                    group_by="well", reference_date=self.as_of,
+                )
+                repair_count = sum(row["record_count"] for row in cost_res["rows"])
                 costs_data.append(
                     {
                         "Well": wid,
-                        "2026 Repair Cost": f"USD {cost_res['total_cost_usd']:,}",
-                        "Repairs Count": cost_res["repair_count"],
+                        f"{year} Repair Cost": f"USD {cost_res['total']:,}",
+                        "Repairs Count": repair_count,
                     }
                 )
                 citations.append(
@@ -588,19 +656,19 @@ class CopilotEngine:
                         "id": f"cit-cost-{wid}",
                         "source_type": "repair",
                         "source_file": f"assets/{wid}/maintenance.jsonl",
-                        "excerpt": f"Total 2026 maintenance cost: USD {cost_res['total_cost_usd']:,}",
+                        "excerpt": f"Total {year} maintenance cost: USD {cost_res['total']:,}",
                         "well_id": wid,
                     }
                 )
 
-            summary_str = " · ".join([f"**{d['Well']}**: {d['2026 Repair Cost']}" for d in costs_data])
-            ans = f"For the three wells discussed ({', '.join(three_wells)}), 2026 repair costs are:\n\n{summary_str}."
+            summary_str = " · ".join([f"**{d['Well']}**: {d[f'{year} Repair Cost']}" for d in costs_data])
+            ans = f"For the wells discussed ({', '.join(three_wells)}), {year} repair costs are:\n\n{summary_str}."
 
             viz = generate_visualization(
                 "table",
-                "2026 Repair Costs for Discussed Wells",
+                f"{year} Repair Costs for Discussed Wells",
                 costs_data,
-                columns=["Well", "2026 Repair Cost", "Repairs Count"],
+                columns=["Well", f"{year} Repair Cost", "Repairs Count"],
             )
 
             return {
@@ -610,25 +678,26 @@ class CopilotEngine:
                 "conflict": False,
             }
 
-        # Q16: "Is any downtime planned for WELL-0007?"
-        if "well-0007" in lower and ("downtime planned" in lower or "planned" in lower):
-            shared = retrieve_shared_memory(mem_conn, well_id="WELL-0007")
+        well_match = re.search(r"\bWELL-\d{4}\b", q, re.I)
+        if well_match and ("downtime planned" in lower or ("planned" in lower and "downtime" in lower)):
+            wid = well_match.group(0).upper()
+            shared = retrieve_shared_memory(mem_conn, well_id=wid)
             shared_notes = shared.get("notes", [])
-            note = next((n for n in shared_notes if "well-0007" in str(n.get("text", "")).lower()), None)
+            note = next((n for n in reversed(shared_notes) if wid.casefold() in str(n.get("text", "")).casefold()), None)
             if note:
-                author = note.get("author", "Jake Morales")
-                ans = f"**Yes**, downtime is planned for **WELL-0007** from **17 Oct** for a 10-day workover, according to operational notice by **{author}**."
+                author = _user_display_name(str(note.get("author", "")))
+                ans = f"**Yes**, a shared operational note records planned downtime for **{wid}**: {note.get('text')} (reported by {author})."
                 citations = [
                     {
-                        "id": "cit-shared-note-7",
+                        "id": f"cit-{note.get('note_id')}",
                         "source_type": "note",
                         "record_id": note.get("note_id"),
                         "excerpt": note.get("text"),
-                        "well_id": "WELL-0007",
+                        "well_id": wid,
                     }
                 ]
             else:
-                ans = "Yes, WELL-0007 is scheduled for a 10-day planned workover starting 17 Oct 2026."
+                ans = f"I found no shared planned-downtime note for {wid}."
                 citations = []
 
             return {
