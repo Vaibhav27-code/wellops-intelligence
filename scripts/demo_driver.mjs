@@ -12,9 +12,12 @@ const API_URL = process.env.ASSET_INTELLIGENCE_API || 'http://127.0.0.1:8000';
 const PAUSE_SECONDS = Math.max(0, Number(process.env.DEMO_PAUSE || 4));
 const TYPE_DELAY_MS = Math.max(10, Number(process.env.DEMO_TYPE_DELAY_MS || 38));
 const DRY_RUN = process.argv.includes('--dry-run');
+const FIVE_MINUTE = process.argv.includes('--five-minute');
 const SCREENSHOT_DIR = path.join(ROOT, 'docs', 'screenshots', 'demo');
 const VIDEO_DIR = path.join(ROOT, 'dist');
-const VIDEO_FINAL = path.join(VIDEO_DIR, 'demo_raw.webm');
+const VIDEO_FINAL = FIVE_MINUTE
+  ? path.join(ROOT, 'docs', 'demo_5min_silent.webm')
+  : path.join(VIDEO_DIR, 'demo_raw.webm');
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 
 const questions = {
@@ -54,6 +57,15 @@ async function finishStep(step, startedAt) {
   await pressEnter(`Next: ${step.title}`);
 }
 
+async function finishFinalBeat(title, targetSeconds, startedAt) {
+  if (DRY_RUN) {
+    await sleep(Math.max(0, targetSeconds * 1000 - (Date.now() - startedAt)));
+    return;
+  }
+  await sleep(PAUSE_SECONDS * 1000);
+  await pressEnter(`Next: ${title}`);
+}
+
 function findChrome() {
   const candidates = [
     process.env.CHROME_PATH,
@@ -89,6 +101,23 @@ async function verifyDemoBackend() {
     throw new Error('Backend provider does not match DEMO_PROVIDER.');
   }
   console.log(`Demo provider: ${health.llm_provider}.`);
+
+  if (FIVE_MINUTE) {
+    const [usersResponse, wellResponse] = await Promise.all([
+      fetch(`${API_URL}/users`, { signal: AbortSignal.timeout(5000) }),
+      fetch(`${API_URL}/wells/WELL-0332`, { signal: AbortSignal.timeout(5000) }),
+    ]);
+    if (!usersResponse.ok || !wellResponse.ok) throw new Error('Final dataset readiness check failed.');
+    const users = (await usersResponse.json()).users || [];
+    const well = await wellResponse.json();
+    if (!users.some((user) => user.name === 'Robert Hayes')) {
+      throw new Error('Final dataset user list does not contain Robert Hayes.');
+    }
+    if (!String(well.latest_inspection?.inspected_at || '').startsWith('2027-01-14')) {
+      throw new Error('WELL-0332 does not have the expected latest final-dataset inspection.');
+    }
+    console.log('Final dataset verified: Robert Hayes is available and WELL-0332 has a 2027-01-14 inspection.');
+  }
 }
 
 async function addVisibleCursor(page) {
@@ -159,6 +188,113 @@ async function ask(page, question, expected) {
   return latest;
 }
 
+function escapeHtml(value) {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+}
+
+async function showTriageRows(page, rowStart, rowEnd) {
+  const markdown = await fs.readFile(path.join(ROOT, 'docs', 'final_triage.md'), 'utf8');
+  const rows = markdown.split(/\r?\n/)
+    .filter((line) => /^\| Q\d+\./.test(line))
+    .map((line) => line.split('|').slice(1, -1).map((cell) => cell.trim()));
+  const selected = rows.slice(rowStart, rowEnd);
+  if (selected.length !== rowEnd - rowStart) throw new Error('Final-question triage is missing rows for the demo.');
+  const body = selected.map(([question, status, data, gap]) => `
+    <tr><th>${escapeHtml(question)}</th><td class="status ${status === 'Cannot be answered' ? 'cannot' : 'partly'}">${escapeHtml(status)}</td>
+      <td>${escapeHtml(data)}</td><td>${escapeHtml(gap)}</td></tr>`).join('');
+  await page.setContent(`<!doctype html><html><head><meta charset="utf-8"><style>
+    *{box-sizing:border-box}body{margin:0;padding:30px 42px;background:#07111f;color:#e6edf7;font:15px/1.38 Inter,system-ui,sans-serif}
+    h1{font-size:34px;margin:0 0 6px}.sub{color:#9fb1ca;margin:0 0 18px;font-size:16px}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;background:#0d1a2b;border:1px solid #29405e;border-radius:12px;overflow:hidden}
+    th,td{text-align:left;vertical-align:top;padding:12px 13px;border-bottom:1px solid #263a53;overflow-wrap:anywhere}
+    thead th{background:#14253b;color:#cfe0ff;font-size:14px}tbody th{width:18%;font-size:14px;color:#eaf1fd}
+    td:nth-child(2){width:14%}.status{font-weight:700}.cannot{color:#ffb56e}.partly{color:#9dc4ff}
+    .foot{margin-top:14px;color:#8195af;font-size:13px}
+  </style></head><body><h1>Final-question coverage review</h1>
+    <p class="sub">Live dataset QA summary from docs/final_triage.md · source availability and app coverage are shown separately</p>
+    <table><thead><tr><th>Question</th><th>Status</th><th>Data available</th><th>Known app gap</th></tr></thead><tbody>${body}</tbody></table>
+    <p class="foot">This is the committed QA record, not a generated copilot answer. The app results shown immediately before it came from the live rules provider.</p>
+  </body></html>`);
+  await addVisibleCursor(page);
+  await page.mouse.move(900, 860);
+}
+
+async function runFiveMinuteFlow(page) {
+  const slide = pathToFileURL(path.join(ROOT, 'docs', 'demo_slide.html')).href;
+  await page.goto(slide, { waitUntil: 'domcontentloaded' });
+  await addVisibleCursor(page);
+  await page.mouse.move(900, 860);
+  await page.addStyleTag({ content: `
+    .stage{transition:opacity .4s,transform .4s,box-shadow .4s}
+    .stage:not(.demo-active){opacity:.42}
+    .stage.demo-active{opacity:1;transform:translateY(-7px);box-shadow:0 0 0 2px #68a6ff,0 22px 55px #2465c766}
+  ` });
+  const architectureStarted = Date.now();
+  const stages = await page.locator('.stage').count();
+  if (stages !== 5) throw new Error('Architecture slide does not show the five verified pipeline stages.');
+  for (let index = 0; index < stages; index += 1) {
+    const stageStarted = Date.now();
+    await page.evaluate((activeIndex) => {
+      document.querySelectorAll('.stage').forEach((element, elementIndex) => {
+        element.classList.toggle('demo-active', elementIndex === activeIndex);
+      });
+    }, index);
+    await screenshot(page, `final_00_architecture_${index + 1}.png`);
+    await finishFinalBeat(`Architecture stage ${index + 1} of ${stages}`, 22, stageStarted);
+  }
+  console.log(`Architecture segment: ${(Date.now() - architectureStarted) / 1000}s (target 110s).`);
+
+  const overviewStarted = Date.now();
+  await page.goto(APP_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.locator('.user-picker__name').waitFor({ state: 'visible', timeout: 30000 });
+  await addVisibleCursor(page);
+  await selectUser(page, 'Robert Hayes');
+  let latest = await ask(
+    page,
+    'Show the latest inspection and current production status for WELL-0332 as a status card.',
+    (answer) => /WELL-0332/i.test(answer) && /not producing oil/i.test(answer),
+  );
+  await latest.locator('.status-card').waitFor({ state: 'visible', timeout: 15000 });
+  const userTrigger = page.locator('.user-picker__trigger');
+  await userTrigger.click();
+  const visibleUsers = await page.locator('.user-picker__option').count();
+  if (visibleUsers < 20) throw new Error('The app did not load the final-dataset user list.');
+  await screenshot(page, 'final_05_app_user_overview.png');
+  await userTrigger.click();
+  await latest.locator('.msg-btn--citations').click();
+  await latest.locator('.citations-drawer').waitFor({ state: 'visible', timeout: 10000 });
+  await latest.locator('.citations-drawer').scrollIntoViewIfNeeded();
+  await screenshot(page, 'final_06_well_status_with_citations.png');
+  await finishFinalBeat('Live app overview', 55, overviewStarted);
+  console.log(`App overview: ${(Date.now() - overviewStarted) / 1000}s (target 55s, ${visibleUsers} users visible).`);
+
+  const queryStarted = Date.now();
+  const areaStarted = Date.now();
+  latest = await ask(
+    page,
+    'Which wells in Southwest Block 23 are not producing oil right now? Show a table.',
+    (answer) => /Southwest Block 23/i.test(answer) && /not producing oil/i.test(answer),
+  );
+  await latest.locator('.data-table-wrapper, .data-table').first().waitFor({ state: 'visible', timeout: 15000 });
+  await latest.locator('.msg-btn--citations').click();
+  await latest.locator('.citations-drawer').waitFor({ state: 'visible', timeout: 10000 });
+  await latest.locator('.citations-drawer').scrollIntoViewIfNeeded();
+  await screenshot(page, 'final_07_area_status_table.png');
+  await finishFinalBeat('Southwest Block 23 status table', 25, areaStarted);
+
+  const firstTriageStarted = Date.now();
+  await showTriageRows(page, 0, 6);
+  await screenshot(page, 'final_08_triage_q1_q6.png');
+  await finishFinalBeat('Triage for questions 1 through 6', 35, firstTriageStarted);
+
+  const secondTriageStarted = Date.now();
+  await showTriageRows(page, 6, 11);
+  await screenshot(page, 'final_09_triage_q7_q11.png');
+  await finishFinalBeat('Triage for questions 7 through 11', 35, secondTriageStarted);
+  console.log(`Query and scenario segment: ${(Date.now() - queryStarted) / 1000}s (target 115s).`);
+}
+
 async function saveRecording(page, context, browser) {
   let temporaryVideo;
   try {
@@ -170,10 +306,10 @@ async function saveRecording(page, context, browser) {
   }
   try { await browser?.close(); } catch { /* Browser may already be closed. */ }
   if (temporaryVideo) {
-    await fs.mkdir(VIDEO_DIR, { recursive: true });
+    await fs.mkdir(path.dirname(VIDEO_FINAL), { recursive: true });
     await fs.copyFile(temporaryVideo, VIDEO_FINAL);
     await fs.rm(temporaryVideo, { force: true });
-    console.log('Silent browser backup saved: dist/demo_raw.webm');
+    console.log(`Silent browser recording saved: ${path.relative(ROOT, VIDEO_FINAL).replaceAll('\\', '/')}`);
   }
 }
 
@@ -233,6 +369,17 @@ async function run() {
       else install();
     });
     page = await context.newPage();
+
+    if (FIVE_MINUTE) {
+      activeStep = 'five-minute final-dataset demo';
+      await runFiveMinuteFlow(page);
+      if (!DRY_RUN) await pressEnter('Stop your voice recording, then close the demo');
+      await saveRecording(page, context, browser);
+      const totalSeconds = (Date.now() - totalStartedAt) / 1000;
+      console.log(`Measured driver run: ${totalSeconds.toFixed(1)} seconds (${(totalSeconds / 60).toFixed(2)} minutes).`);
+      console.log('The demo showed live rules-provider responses from the isolated final-dataset demo DB and the committed final-question triage.');
+      return;
+    }
 
     activeStep = 'architecture';
     let startedAt = Date.now();

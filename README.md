@@ -137,6 +137,88 @@ node scripts/demo_driver.mjs
 
 Start your screen recorder with microphone audio enabled after the architecture slide appears. The Playwright backup remains silent. Run `node scripts/demo_driver.mjs --dry-run` for the automatically paced verification flow.
 
+### Five-minute demo on the official final dataset
+
+This flow uses the released test dataset in the isolated `data/demo.db` and the rules provider. It is paced to 4:50: 1:55 architecture, 1:00 app overview with a live status question, and 1:55 for an area query plus the full Q1–Q11 triage. Both live questions use actual `/chat` results. The last two screens are rendered from [`docs/final_triage.md`](docs/final_triage.md), so unsupported answers are clearly marked instead of presented as copilot results. The silent Playwright capture is saved as [`docs/demo_5min_silent.webm`](docs/demo_5min_silent.webm); record your narration separately with your own microphone.
+
+#### Windows (PowerShell)
+
+Run the terminals in order from the repository root.
+
+**Terminal 1 — final dataset backend:**
+
+```powershell
+$env:ASSET_INTELLIGENCE_DATASET = "data/raw/flytbase-ahc-swe-asset-intelligence-dataset/test-data/dataset"
+$env:ASSET_INTELLIGENCE_DB = "data/demo.db"
+$env:LLM_CACHE_PATH = "data/demo_llm_cache.db"
+$env:REFERENCE_DATE = "2027-01-15"
+$env:LLM_PROVIDER = "rules"
+$env:DEMO_PROVIDER = "rules"
+$env:DEMO_API_PORT = "8001"
+.\.venv\Scripts\python.exe scripts\demo_server.py
+```
+
+**Terminal 2 — frontend pointed at the rules backend:**
+
+```powershell
+cd frontend
+$env:VITE_API_URL = "http://127.0.0.1:8001"
+npm run dev -- --host localhost --port 5174
+```
+
+**Terminal 3 — reset the isolated DB, start your screen recorder with microphone audio, then run the demo:**
+
+```powershell
+$env:ASSET_INTELLIGENCE_DATASET = "data/raw/flytbase-ahc-swe-asset-intelligence-dataset/test-data/dataset"
+.\scripts\demo_reset.ps1
+$env:ASSET_INTELLIGENCE_API = "http://127.0.0.1:8001"
+$env:DEMO_APP_URL = "http://localhost:5174"
+$env:DEMO_PROVIDER = "rules"
+$env:DEMO_PAUSE = "4"
+node scripts/demo_driver.mjs --five-minute
+```
+
+Press Enter in the driver terminal at each cue while narrating. To automatically run the same real app flow and create a silent QA capture, add `--dry-run` to the last command. The driver refuses to run unless the guarded demo backend reports the dedicated demo DB and the final-dataset user and inspection checks pass.
+
+#### macOS / Linux
+
+Run the terminals in order from the repository root.
+
+**Terminal 1 — final dataset backend:**
+
+```bash
+export ASSET_INTELLIGENCE_DATASET=data/raw/flytbase-ahc-swe-asset-intelligence-dataset/test-data/dataset
+export ASSET_INTELLIGENCE_DB=data/demo.db
+export LLM_CACHE_PATH=data/demo_llm_cache.db
+export REFERENCE_DATE=2027-01-15
+export LLM_PROVIDER=rules
+export DEMO_PROVIDER=rules
+export DEMO_API_PORT=8001
+.venv/bin/python scripts/demo_server.py
+```
+
+**Terminal 2 — frontend pointed at the rules backend:**
+
+```bash
+cd frontend
+export VITE_API_URL=http://127.0.0.1:8001
+npm run dev -- --host localhost --port 5174
+```
+
+**Terminal 3 — reset the isolated DB, start your screen recorder with microphone audio, then run the demo:**
+
+```bash
+export ASSET_INTELLIGENCE_DATASET=data/raw/flytbase-ahc-swe-asset-intelligence-dataset/test-data/dataset
+bash scripts/demo_reset.sh
+export ASSET_INTELLIGENCE_API=http://127.0.0.1:8001
+export DEMO_APP_URL=http://localhost:5174
+export DEMO_PROVIDER=rules
+export DEMO_PAUSE=4
+node scripts/demo_driver.mjs --five-minute
+```
+
+Press Enter at each cue. Add `--dry-run` to automatically pace the same live flow and save the silent QA capture.
+
 ## Configuration
 
 Copy `.env.example` to the ignored `.env`. Put any real API key in `.env` or the process environment; never commit `.env`. The checked-in example intentionally contains no secret.
