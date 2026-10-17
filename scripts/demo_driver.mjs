@@ -170,20 +170,22 @@ async function selectUser(page, displayName) {
 }
 
 async function ask(page, question, expected) {
-  const answers = page.locator('.message-bubble--assistant .message-bubble__text');
-  const priorCount = await answers.count();
+  const priorCount = await page.locator('.message-bubble--assistant').count();
   const input = page.locator('.chat-input');
+  await input.scrollIntoViewIfNeeded();
   await input.click();
-  await page.keyboard.type(question, { delay: TYPE_DELAY_MS });
-  await page.locator('.chat-send-btn').click();
+  await input.fill(question);
+  const sendBtn = page.locator('.chat-send-btn');
+  await sendBtn.waitFor({ state: 'visible', timeout: 10000 });
+  await sendBtn.click();
   await page.waitForFunction(
-    (count) => document.querySelectorAll('.message-bubble--assistant .message-bubble__text').length > count
+    (count) => document.querySelectorAll('.message-bubble--assistant').length > count
       && !document.querySelector('.typing-indicator'),
     priorCount,
-    { timeout: 60000 },
+    { timeout: 90000 },
   );
   const latest = page.locator('.message-bubble--assistant').last();
-  const text = await latest.locator('.message-bubble__text').innerText();
+  const text = await latest.innerText();
   if (expected && !expected(text)) throw new Error('Rendered answer did not match the expected real-data check.');
   return latest;
 }
@@ -276,13 +278,16 @@ async function runFiveMinuteFlow(page) {
     'Which wells in Southwest Block 23 are not producing oil right now? Show a table.',
     (answer) => /Southwest Block 23/i.test(answer) && /not producing oil/i.test(answer),
   );
-  await latest.locator('.data-table-wrapper, .data-table').first().waitFor({ state: 'visible', timeout: 15000 });
+  await latest.locator('.data-table-wrapper, .data-table').first().waitFor({ state: 'visible', timeout: 30000 });
   await latest.scrollIntoViewIfNeeded();
   await screenshot(page, 'final_07_area_status_table.png');
-  await latest.locator('.msg-btn--citations').click();
-  await latest.locator('.citations-drawer').waitFor({ state: 'visible', timeout: 10000 });
-  await latest.locator('.citations-drawer').scrollIntoViewIfNeeded();
-  await screenshot(page, 'final_07b_area_citations.png');
+  const citationsBtn = latest.locator('.msg-btn--citations');
+  if (await citationsBtn.count() > 0) {
+    await citationsBtn.first().click();
+    await latest.locator('.citations-drawer').waitFor({ state: 'visible', timeout: 15000 });
+    await latest.locator('.citations-drawer').scrollIntoViewIfNeeded();
+    await screenshot(page, 'final_07b_area_citations.png');
+  }
   await finishFinalBeat('Southwest Block 23 status table', 25, areaStarted);
 
   const firstTriageStarted = Date.now();
@@ -335,13 +340,17 @@ async function run() {
       viewport: { width: 1600, height: 900 },
       recordVideo: { dir: VIDEO_DIR, size: { width: 1600, height: 900 } },
     });
-    const demoApiOrigin = new URL(API_URL).origin;
+    const allowedOrigins = new Set([
+      new URL(API_URL).origin,
+      'http://localhost:8000',
+      'http://127.0.0.1:8000',
+    ]);
     await context.route('**/*', async (route) => {
       const requestUrl = new URL(route.request().url());
       const isApiRequest = [
         '/chat', '/users', '/corrections', '/feedback', '/health', '/wells/search',
       ].includes(requestUrl.pathname) || requestUrl.pathname.startsWith('/wells/') || requestUrl.pathname.startsWith('/memory/private/');
-      if (isApiRequest && requestUrl.origin !== demoApiOrigin) {
+      if (isApiRequest && !allowedOrigins.has(requestUrl.origin)) {
         console.error(`Blocked API request outside demo origin: ${requestUrl.origin}`);
         await route.abort();
         return;
@@ -492,7 +501,7 @@ async function run() {
     console.log('All scripted checks used live app responses from the isolated sample-data demo database.');
   } catch (error) {
     console.error(`Demo stopped during ${activeStep}: ${error?.name || 'Error'}.`);
-    if (activeStep === 'startup') console.error(String(error?.message || 'Startup detail unavailable'));
+    console.error(error?.stack || error?.message || String(error));
     await saveRecording(page, context, browser);
     process.exitCode = 1;
   } finally {

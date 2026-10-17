@@ -53,10 +53,24 @@ class RcaRule:
     citation: str
 
 
+def _find_fleet_doc(subpath: str, sample_data_root: str | Path) -> Path:
+    target = Path(sample_data_root) / subpath
+    if target.exists():
+        return target
+    candidates = [
+        Path(sample_data_root).parents[0] / "test-data" / "dataset" / subpath,
+        Path(__file__).resolve().parents[3] / "data" / "raw" / "flytbase-ahc-swe-asset-intelligence-dataset" / "test-data" / "dataset" / subpath,
+        Path(__file__).resolve().parents[3] / "data" / "raw" / "flytbase-ahc-swe-asset-intelligence-dataset" / "sample-data" / subpath,
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return target
+
+
 def load_rca_rule(well_type: str, sample_data_root: str | Path) -> RcaRule:
     """Read the corrective-maintenance RCA trigger from the well-type manuals."""
-    root = Path(sample_data_root)
-    t200_path = root / "fleet" / "well-types" / "T200.md"
+    t200_path = _find_fleet_doc("fleet/well-types/T200.md", sample_data_root)
     text = t200_path.read_text(encoding="utf-8")
     count_match = re.search(
         r"([A-Za-z]+|\d+)\s+or more\s+\*\*corrective\*\*",
@@ -77,7 +91,7 @@ def load_rca_rule(well_type: str, sample_data_root: str | Path) -> RcaRule:
 
 
 def load_production_rule(well_type: str, sample_data_root: str | Path) -> ProductionRule:
-    manual_path = Path(sample_data_root) / "fleet" / "well-types" / f"{well_type}.md"
+    manual_path = _find_fleet_doc(f"fleet/well-types/{well_type}.md", sample_data_root)
     text = manual_path.read_text(encoding="utf-8")
     threshold_patterns = (
         r"at least\s+\*\*(?P<value>\d+(?:\.\d+)?)\s*°\s*C\s+above\s+ambient",
@@ -95,7 +109,10 @@ def load_production_rule(well_type: str, sample_data_root: str | Path) -> Produc
     )
     preceding = [heading for heading in headings if heading.start() <= match.start()]
     section = preceding[-1].group("section") if preceding else None
-    citation = f"{manual_path.relative_to(Path(sample_data_root)).as_posix()}"
+    try:
+        citation = f"{manual_path.relative_to(Path(sample_data_root)).as_posix()}"
+    except ValueError:
+        citation = f"fleet/well-types/{well_type}.md"
     if section:
         citation += f"#section {section}"
     return ProductionRule(
@@ -106,7 +123,7 @@ def load_production_rule(well_type: str, sample_data_root: str | Path) -> Produc
 
 
 def load_spill_rules(sample_data_root: str | Path) -> SpillRules:
-    sop_path = Path(sample_data_root) / "fleet" / "sops" / "spill-response-sop.md"
+    sop_path = _find_fleet_doc("fleet/sops/spill-response-sop.md", sample_data_root)
     text = sop_path.read_text(encoding="utf-8")
     bands: list[SpillBand] = []
     for line in text.splitlines():

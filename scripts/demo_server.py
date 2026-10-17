@@ -26,7 +26,11 @@ def main() -> None:
         raise SystemExit("DEMO_PROVIDER must be 'rules' or 'gemini'.")
     os.environ["LLM_PROVIDER"] = provider
     os.environ["DEMO_MODE"] = "1"
-    os.environ.setdefault("ASSET_INTELLIGENCE_DATASET", "data/raw/flytbase-ahc-swe-asset-intelligence-dataset")
+    os.environ["ASSET_INTELLIGENCE_DB"] = str(expected_db)
+    os.environ["LLM_CACHE_PATH"] = str(expected_cache)
+    test_dataset = (ROOT / "data" / "raw" / "flytbase-ahc-swe-asset-intelligence-dataset" / "test-data" / "dataset").resolve()
+    default_dataset = str(test_dataset) if test_dataset.is_dir() else "data/raw/flytbase-ahc-swe-asset-intelligence-dataset"
+    os.environ.setdefault("ASSET_INTELLIGENCE_DATASET", default_dataset)
     port = int(os.getenv("DEMO_API_PORT", "8000"))
 
     import uvicorn
