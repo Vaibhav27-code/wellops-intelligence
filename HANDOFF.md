@@ -101,7 +101,7 @@ Codex owns `/backend`. Antigravity owns `/frontend`. Cursor does small edits any
 - [x] Conflicting corrections and user-vs-data conflicts are flagged, not overwritten
 - [x] Citations point to real filename + record ID/section
 - [x] 18 example questions run, pass/fail table written
-- [x] New dataset loads with zero code changes
+- [x] Shifted and renamed sample-data simulation ingests with a new well type and manual
 - [x] API endpoint tests + frontend renders chart/table/card
 
 ## 8. Deliverables checklist
@@ -185,6 +185,7 @@ Format: `[time] tool: done / in progress / blocked / next`
   - Added "Copy as Markdown" button on every assistant message; copies structured question, answer, calculation rule, table data, and citations to clipboard; verified click state `✓ Copied!`.
   - Executed 3 unseen questions (SW-23 repair costs, T200 2025 downtime, SW-24 2025 spills) in browser: all 3 rendered clean responses without crashing; screenshot saved at `docs/screenshots/11_unseen_questions_check.png`.
   - `npm run build` passes with 0 errors.
+- [14:32 IST, 2026-10-17] Codex: completed generalization/evaluation hardening / verified: full pytest 73 passed (one Starlette/httpx deprecation warning); 25/25 unseen metric questions matched independent pandas oracles; shifted/renamed dataset simulation with deleted inspections and new T500 manual passed; rules official evaluation 18/18 (22 API actions, 0 provider calls); one Gemini evaluation run 18/18 (22 API actions, 64 outbound attempts including retries, 6 SQLite cache hits); no pass/fail or structured-output/citation differences between providers, answer wording differed on Q1-Q8, Q11, Q17, Q18; final evaluation failures 0; `.env` ignored and untracked / next: record any future dataset release and complete video/submission checklist.
 
 
 

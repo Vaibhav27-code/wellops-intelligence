@@ -21,8 +21,8 @@ The **Asset Intelligence Copilot** provides engineering-grade decision support a
   - Ingests structured and semi-structured assets: `wells` (200 rows), `inspections` (39,567 rows), `maintenance` (5,665 rows), and `regulatory_events` (90 rows).
   - Fast B-tree indices on `(well_id, inspected_at)`, `(area_id)`, and `(well_id, completed_at)` enable sub-10ms query execution across 45,000+ records.
 - **Unstructured SQLite FTS5 Full-Text Search:**
-  - Ingests 1,514 markdown maintenance reports, engineering manuals, standard operating procedures (SOPs), and human context notes.
-  - Tokenized with Porter stemming for rapid discovery of root-cause analyses, workover notes, and containment timelines.
+  - The sample contains 1,514 Markdown source files, including 1,509 maintenance reports, 2 manuals, and 3 SOPs; the 141 human context notes are indexed as separate FTS documents, for 1,655 indexed documents total.
+  - SQLite FTS5 indexes the documents for discovery of root-cause analyses, workover notes, and containment timelines.
 - **Audited Corrections & Knowledge Storage:**
   - `corrections`: Stores field re-measurements and volume adjustments with full audit metadata (`author`, `timestamp`, `reason`, `original_value`, `corrected_value`, `evidence`). Raw records remain immutable.
   - `shared_notes`: Global operational notes visible across all users.
@@ -77,8 +77,8 @@ The ingestion engine (`backend/app/ingest/loader.py`) operates dynamically:
 ---
 
 ### 6. Models, Latency & Cost Optimization
-- **Primary LLM Tier:** High-speed inference using Google Gemini 2.5 Flash / OpenAI GPT-4o-mini / local Ollama (`gemma4`).
-- **Cost Reduction:** Exact prompt caching via SQLite cache table (`llm_cache.db`). Deterministic intent extraction falls back to an offline rule-based parser if LLM quota is exhausted or network fails, guaranteeing 100% uptime at $0 inference cost for standard operational questions.
+- **Primary LLM:** Google Gemini `gemini-3.5-flash-lite`; local Ollama (`gemma4:e4b`) and deterministic rules are alternatives.
+- **Call and cost controls:** A question uses at most two logical provider calls (validated intent extraction and optional answer wording); transient retries can make up to four outbound attempts per logical call, and cached responses make no request. Rules development and fallback make no provider calls. Google currently lists the model's Standard input/output prices as $0.30/$2.50 per million tokens and free-tier access; quotas and pricing can change with model and account tier. See [Google Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing).
 
 ---
 
