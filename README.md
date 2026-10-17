@@ -81,6 +81,8 @@ $env:DEMO_PROVIDER = "rules" # set to "gemini" to use Gemini
 .\.venv\Scripts\python.exe scripts\demo_server.py
 ```
 
+If port 8000 is already in use, set `$env:DEMO_API_PORT = "8001"` before starting the backend. In Terminal 3, use `$env:ASSET_INTELLIGENCE_API = "http://127.0.0.1:8001"` and `$env:DEMO_APP_URL = "http://localhost:5173/?api=http%3A%2F%2F127.0.0.1%3A8001"` before the driver command. This keeps the app on port 5173 while routing it to the guarded demo backend.
+
 **Terminal 2 — frontend:**
 
 ```powershell
@@ -113,6 +115,8 @@ export LLM_CACHE_PATH=data/demo_llm_cache.db
 export DEMO_PROVIDER=rules # set to gemini to use Gemini
 .venv/bin/python scripts/demo_server.py
 ```
+
+If port 8000 is already in use, set `DEMO_API_PORT=8001` before starting the backend. In Terminal 3, set `ASSET_INTELLIGENCE_API=http://127.0.0.1:8001` and `DEMO_APP_URL='http://localhost:5173/?api=http%3A%2F%2F127.0.0.1%3A8001'` before the driver command.
 
 **Terminal 2 — frontend:**
 

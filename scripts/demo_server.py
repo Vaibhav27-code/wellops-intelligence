@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -12,6 +13,7 @@ def _path_from_env(variable: str, default: str) -> Path:
 
 
 def main() -> None:
+    sys.path.insert(0, str(ROOT))
     expected_db = (ROOT / "data" / "demo.db").resolve()
     expected_cache = (ROOT / "data" / "demo_llm_cache.db").resolve()
     if _path_from_env("ASSET_INTELLIGENCE_DB", "") != expected_db:
@@ -25,11 +27,12 @@ def main() -> None:
     os.environ["LLM_PROVIDER"] = provider
     os.environ["DEMO_MODE"] = "1"
     os.environ.setdefault("ASSET_INTELLIGENCE_DATASET", "data/raw/flytbase-ahc-swe-asset-intelligence-dataset")
+    port = int(os.getenv("DEMO_API_PORT", "8000"))
 
     import uvicorn
 
-    print(f"Starting demo backend with provider={provider}; database and cache paths are guarded.")
-    uvicorn.run("backend.app.main:app", host="127.0.0.1", port=8000, reload=False)
+    print(f"Starting demo backend on port {port} with provider={provider}; database and cache paths are guarded.")
+    uvicorn.run("backend.app.main:app", host="127.0.0.1", port=port, reload=False)
 
 
 if __name__ == "__main__":

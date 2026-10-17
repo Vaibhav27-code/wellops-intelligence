@@ -197,6 +197,19 @@ async function run() {
       viewport: { width: 1600, height: 900 },
       recordVideo: { dir: VIDEO_DIR, size: { width: 1600, height: 900 } },
     });
+    const demoApiOrigin = new URL(API_URL).origin;
+    await context.route('**/*', async (route) => {
+      const requestUrl = new URL(route.request().url());
+      const isApiRequest = [
+        '/chat', '/users', '/corrections', '/feedback', '/health', '/wells/search',
+      ].includes(requestUrl.pathname) || requestUrl.pathname.startsWith('/wells/') || requestUrl.pathname.startsWith('/memory/private/');
+      if (isApiRequest && requestUrl.origin !== demoApiOrigin) {
+        console.error(`Blocked API request outside demo origin: ${requestUrl.origin}`);
+        await route.abort();
+        return;
+      }
+      await route.continue();
+    });
     await context.addInitScript(() => {
       const install = () => {
         if (document.getElementById('__demo-cursor')) return;
@@ -244,8 +257,12 @@ async function run() {
     await calc.locator('summary').click();
     await page.locator('details.calculation-explanation[open]').waitFor({ state: 'visible' });
     await screenshot(page, '01_downtime_bar_evidence.png');
+    await latest.locator('.citations-drawer').scrollIntoViewIfNeeded();
+    await screenshot(page, '01b_downtime_citations.png');
     await latest.locator('.viz-view-selector button').filter({ hasText: /^Table$/ }).click();
-    await latest.locator('.data-table-wrapper, .data-table').first().waitFor({ state: 'visible', timeout: 15000 });
+    const downtimeTable = latest.locator('.data-table-wrapper, .data-table').first();
+    await downtimeTable.waitFor({ state: 'visible', timeout: 15000 });
+    await downtimeTable.scrollIntoViewIfNeeded();
     await screenshot(page, '02_downtime_table.png');
     console.log('Step 2/6: Q6 downtime bar, sources, calculation rule, and table view.');
     await finishStep(steps.downtime, startedAt);
@@ -259,6 +276,7 @@ async function run() {
     if (!/Data evaluated as of:\s*\d{4}-\d{2}-\d{2}/.test(await latest.innerText())) {
       throw new Error('Status answer did not render the database-derived freshness label.');
     }
+    await latest.scrollIntoViewIfNeeded();
     await screenshot(page, '03_status_conflict_card.png');
     console.log('Step 3/6: status card with the real inspection conflict and reference date.');
     await finishStep(steps.status, startedAt);
@@ -289,6 +307,7 @@ async function run() {
     await latest.locator('.data-table-wrapper, .data-table').first().waitFor({ state: 'visible', timeout: 15000 });
     const tableText = await latest.locator('.data-table-wrapper, .data-table').first().innerText();
     if (tableText.includes('WELL-0164')) throw new Error('Corrected well still appeared in the non-producing table.');
+    await latest.locator('.conflict-banner').scrollIntoViewIfNeeded();
     await screenshot(page, '06_shared_correction_area.png');
     console.log('Step 4/6: scoped correction, audit trail, and Jessica’s shared area result.');
     await finishStep(steps.correction, startedAt);
@@ -296,10 +315,12 @@ async function run() {
     activeStep = 'memory';
     startedAt = Date.now();
     latest = await ask(page, questions.privateRecall, (text) => /no record|no earlier conversation/i.test(text));
+    await latest.scrollIntoViewIfNeeded();
     await screenshot(page, '07_jessica_private_no_history.png');
     await selectUser(page, 'Michael Turner');
     latest = await ask(page, questions.privateRecall, (text) => /WELL-0121/i.test(text) && /25,794/i.test(text));
     await latest.locator('.data-table-wrapper, .data-table').first().waitFor({ state: 'visible', timeout: 15000 });
+    await latest.scrollIntoViewIfNeeded();
     await screenshot(page, '08_michael_private_recall_costs.png');
     console.log('Step 5/6: Jessica has no prior three-well exchange; Michael recalls his own wells and costs.');
     await finishStep(steps.memory, startedAt);
@@ -309,6 +330,7 @@ async function run() {
     await selectUser(page, 'Jessica Reed');
     latest = await ask(page, questions.generalization, (text) => /Southwest Block 23/i.test(text) && /repair cost/i.test(text));
     await latest.locator('.bar-chart-viz, .recharts-bar').first().waitFor({ state: 'visible', timeout: 30000 });
+    await latest.scrollIntoViewIfNeeded();
     await screenshot(page, '09_unseen_area_repair_costs.png');
     console.log('Step 6/6: a non-chip question across a different area and metric.');
     await finishStep(steps.generalization, startedAt);
@@ -321,6 +343,7 @@ async function run() {
     console.log('All scripted checks used live app responses from the isolated sample-data demo database.');
   } catch (error) {
     console.error(`Demo stopped during ${activeStep}: ${error?.name || 'Error'}.`);
+    if (activeStep === 'startup') console.error(String(error?.message || 'Startup detail unavailable'));
     await saveRecording(page, context, browser);
     process.exitCode = 1;
   } finally {

@@ -1,6 +1,9 @@
 import type { ChatRequest, ChatResponse, FeedbackRequest, FeedbackRating } from '../types';
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const localApiOverride = import.meta.env.DEV && typeof window !== 'undefined'
+  ? new URLSearchParams(window.location.search).get('api')
+  : null;
+const BASE_URL = localApiOverride ?? import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
