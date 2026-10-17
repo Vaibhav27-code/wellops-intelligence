@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,39 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 def get_db_path() -> Path:
     configured = Path(os.getenv("ASSET_INTELLIGENCE_DB", "data/asset_intelligence.db")).expanduser()
     return configured.resolve() if configured.is_absolute() else (PROJECT_ROOT / configured).resolve()
+
+
+def get_reference_date(database_path: str | Path | None = None) -> str:
+    """Return the configured reference date or latest inspection date in the DB."""
+    override = os.getenv("REFERENCE_DATE", "").strip()
+    if override:
+        try:
+            return date.fromisoformat(override).isoformat()
+        except ValueError as exc:
+            raise ValueError("REFERENCE_DATE must use YYYY-MM-DD format") from exc
+
+    path = Path(database_path).expanduser().resolve() if database_path else get_db_path()
+    if not path.is_file():
+        raise FileNotFoundError(f"Asset database does not exist: {path}")
+
+    connection = sqlite3.connect(path)
+    try:
+        row = connection.execute(
+            "SELECT MAX(substr(event_at, 1, 10)) FROM records "
+            "WHERE entity_type = 'inspection' AND event_at IS NOT NULL"
+        ).fetchone()
+    except sqlite3.OperationalError as exc:
+        raise RuntimeError("Asset database has no readable inspection records") from exc
+    finally:
+        connection.close()
+
+    latest = row[0] if row else None
+    if not latest:
+        raise RuntimeError("No inspection timestamp is available for the reference date")
+    try:
+        return date.fromisoformat(str(latest)).isoformat()
+    except ValueError as exc:
+        raise RuntimeError("Latest inspection timestamp is not a valid ISO date") from exc
 
 
 def get_sample_data_root() -> Path:
