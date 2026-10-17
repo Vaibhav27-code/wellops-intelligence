@@ -275,6 +275,42 @@ def test_rules_extract_general_metric_filters_and_grouping() -> None:
             "previous 90 days",
             "compliance",
         ),
+        (
+            "Show work-order spending by month for T350 wells in Southwest Block 24 during last quarter.",
+            "repair_cost",
+            "during last quarter",
+            "repair_cost",
+        ),
+        (
+            "Which locations recorded the most release volume in Northeast Block 8 over the past 180 days?",
+            "spill_volume",
+            "past 180 days",
+            "spill_search",
+        ),
+        (
+            "Count spill notices filed after their deadline by month in Northeast Block 7 during 2026.",
+            "late_reports",
+            "during 2026",
+            "compliance",
+        ),
+        (
+            "Find cleanup containment overruns in Northeast Block 8 over the past 90 days.",
+            "containment_breaches",
+            "past 90 days",
+            "containment_breach",
+        ),
+        (
+            "How many spill response failures occurred in Southwest Block 24 last quarter?",
+            "containment_breaches",
+            "last quarter",
+            "containment_breach",
+        ),
+        (
+            "Show containment deadline misses by area for T350 assets this year.",
+            "containment_breaches",
+            "this year",
+            "containment_breach",
+        ),
     ],
 )
 def test_rules_extracts_alternative_metric_phrasings(question, metric, date_phrase, intent_name) -> None:

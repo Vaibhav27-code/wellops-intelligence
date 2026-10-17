@@ -116,18 +116,20 @@ def extract_intent(question: str) -> Intent:
     well_type_match = _WELL_TYPE_RE.search(question)
 
     keyword_rules = {
-        "downtime": r"\b(down|downtime|offline|shut[- ]*in)\b",
-        "spill": r"\b(spills?|crude|releases?|barrels?|bbl)\b",
-        "repair_cost": r"\b(repair|repairs|maintenance|work orders?)\b.{0,35}\b(cost|costs|spent|price|expense|expensive|priciest|costly)\b|\b(cost|costs|spent|price|expense|expensive|priciest|costly)\b.{0,35}\b(repair|repairs|maintenance|work orders?)\b",
+        "downtime": r"\b(down|downtime|offline|shut[- ]*in|shutdowns?|lost (?:production )?(?:time|days?))\b",
+        "spill": r"\b(spills?|crude|releases?|barrels?|bbl|leaks?)\b",
+        "repair_cost": r"\b(repair|repairs|maintenance|work[- ]orders?|corrective work)\b.{0,35}\b(cost|costs|spent|spend|spending|price|expense|expenses|expensive|priciest|costly|costliest)\b|\b(cost|costs|spent|spend|spending|price|expense|expenses|expensive|priciest|costly|costliest)\b.{0,35}\b(repair|repairs|maintenance|work[- ]orders?|corrective work)\b",
         "sop": r"\b(sop|procedure|protocol|manual|limit|deadline)\b",
-        "late_reports": r"\b(late|overdue|missed|unfiled|after the deadline|past the deadline)\b.{0,25}\b(reports?|filings?|notices?)\b|\b(reports?|filings?|notices?)\b.{0,25}\b(late|overdue|missed|unfiled|after the deadline|past the deadline)\b",
+        "late_reports": r"\b(late|overdue|missed|unfiled)\b.{0,35}\b(reports?|filings?|notices?)\b|\b(reports?|filings?|notices?)\b.{0,35}\b(late|overdue|missed|unfiled)\b|\b(reports?|filings?|notices?)\b.{0,35}\b(?:after|past)\s+(?:their|the)\s+(?:filing\s+)?deadlines?\b|\b(?:after|past)\s+(?:their|the)\s+(?:filing\s+)?deadlines?\b.{0,35}\b(reports?|filings?|notices?)\b",
         "correction": r"\b(correct|correction|wrong|faulty|re-measured|remeasured|measured)\b",
         "memory": r"\b(remember|discussed|yesterday|previous (?:conversation|chat)|last (?:conversation|chat)|history)\b",
     }
     keywords = [name for name, pattern in keyword_rules.items() if re.search(pattern, text, re.IGNORECASE)]
 
     metric = None
-    if re.search(r"\b(containment|contained)\b", text) and re.search(r"\b(breach|breaches|limit|sop|time)\b", text):
+    if re.search(r"\b(containment|contained|cleanups?|spill response|response windows?)\b", text) and re.search(r"\b(breach(?:es|ed)?|limit|sop|time|overruns?|miss(?:ed|es)?|exceeded|failures?)\b", text):
+        metric = "containment_breaches"
+    elif re.search(r"\bspill response\b", text) and re.search(r"\b(failures?|missed|overruns?|exceeded)\b", text):
         metric = "containment_breaches"
     elif "late_reports" in keywords:
         metric = "late_reports"
@@ -158,6 +160,8 @@ def extract_intent(question: str) -> Intent:
         intent = "shared_memory"
     elif private_memory:
         intent = "private_memory"
+    elif metric == "containment_breaches":
+        intent = "containment_breach"
     elif metric == "late_reports":
         intent = "compliance"
     elif re.search(r"\b(contain|contained|containment)\b", text) and re.search(r"\b(spills?|releases?)\b", text):

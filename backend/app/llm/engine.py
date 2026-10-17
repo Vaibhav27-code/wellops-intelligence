@@ -1308,8 +1308,15 @@ class CopilotEngine:
             breach_query = query_metric(
                 "containment_breaches",
                 area=area_name,
+                well_type=intent.well_type if intent else None,
+                well_id=intent.well_ids[0] if intent and intent.well_ids else None,
+                date_from=intent.date_from if intent else None,
+                date_to=intent.date_to if intent else None,
+                season=intent.season if intent else None,
+                quarter=intent.quarter if intent else None,
+                year=intent.year if intent else None,
                 date_phrase=(intent.date_phrase if intent and intent.date_phrase else "last 90 days"),
-                group_by="well",
+                group_by=intent.group_by if intent else "well",
                 reference_date=self.as_of,
             )
             breaches = [item["details"] for item in breach_query["records"]]
