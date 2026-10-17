@@ -702,7 +702,17 @@ class CopilotEngine:
 
             # Check if THIS user had a prior conversation mentioning the three wells
             three_wells = None
-            for msg in reversed(history):
+            for index in range(len(history) - 1, -1, -1):
+                msg = history[index]
+                if msg.get("role") != "assistant" or index == 0:
+                    continue
+                prior_question = history[index - 1]
+                if prior_question.get("role") != "user" or not re.search(
+                    r"\b(?:3|three)\s+wells\b|\btop\s+(?:3|three)\b",
+                    str(prior_question.get("content", "")),
+                    re.IGNORECASE,
+                ):
+                    continue
                 content = str(msg.get("content", ""))
                 payload = msg.get("payload") or {}
                 # Recover the assets from the user's earlier conversation.

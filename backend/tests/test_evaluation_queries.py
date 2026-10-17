@@ -229,7 +229,17 @@ def test_q11_and_q16_private_memory_isolation():
     assert "46,942" in d1["answer"]
     assert "5,176" in d1["answer"]
 
-    # User 2: Jessica Reed asks the same question in her own session
+    # An unrelated area result must not become Jessica's remembered "three wells".
+    area_response = client.post(
+        "/chat",
+        json={
+            "question": "Which wells in Northeast Block 8 are not producing oil right now, and why? Show them in a table.",
+            "user_id": "jessica-reed",
+        },
+    )
+    assert area_response.status_code == 200
+
+    # User 2: Jessica Reed asks the same memory question in her own session
     res2 = client.post(
         "/chat",
         json={

@@ -163,7 +163,7 @@ def retrieve_shared_memory(
 def retrieve_private_memory(connection: sqlite3.Connection, user_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
     rows = connection.execute(
         """SELECT * FROM private_messages WHERE user_id = ?
-           ORDER BY created_at DESC, message_id DESC LIMIT ?""",
+           ORDER BY created_at DESC, rowid DESC LIMIT ?""",
         (user_id, max(1, min(limit, 200))),
     ).fetchall()
     result = []
