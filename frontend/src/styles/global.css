@@ -24,9 +24,9 @@
   --radius:   8px;
   --radius-sm: 4px;
 
-  font-family: 'Inter', system-ui, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
   color: var(--c-text);
   background: var(--c-bg);
 }
@@ -595,4 +595,17 @@ input, textarea, select { font: inherit; }
   .chat-thread__input-box { padding: 8px 10px; }
   .message-bubble { max-width: 95%; }
   .modal { width: 95%; }
+}
+
+@media (max-width: 380px) {
+  .topbar { height: 48px; padding: 0 8px; }
+  .topbar__brand { gap: 6px; }
+  .topbar__title { font-size: 12px; }
+  .user-picker__name { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+  .chat-thread__topbar { padding: 6px 10px; font-size: 11px; }
+  .chat-thread__messages { padding: 8px; }
+  .chat-input-row { gap: 6px; }
+  .chat-send-btn { width: 36px; height: 36px; }
+  .example-chips__chip { font-size: 11px; padding: 4px 8px; max-width: 100%; }
+  .conflict-sources-grid { grid-template-columns: 1fr !important; }
 }

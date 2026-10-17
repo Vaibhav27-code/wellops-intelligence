@@ -43,7 +43,7 @@ export function HeatmapViz({ spec }: HeatmapVizProps) {
   };
 
   return (
-    <div className="heatmap-wrapper">
+    <div className="heatmap-viz heatmap-wrapper">
       <h3 className="chart-title">{spec.title}</h3>
       <div className="heatmap-scroll">
         <table className="heatmap">

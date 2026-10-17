@@ -16,6 +16,7 @@ export function ChatThread() {
   const [input, setInput] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [showChips, setShowChips] = React.useState(false);
 
   const bottomRef = React.useRef<HTMLDivElement>(null);
 
@@ -60,18 +61,23 @@ export function ChatThread() {
       };
       addMessage(currentUser.user_id, assistantMsg);
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : 'Unknown error';
-      // Add error as assistant message so it's in context
+      const errMsg = err instanceof Error ? err.message : 'Unknown network/server error';
+      // Add readable error as assistant message so it is preserved in context
       addMessage(currentUser.user_id, {
         id: nextId(),
         role: 'assistant',
-        content: `⚠️ Could not reach the backend: ${errMsg}. Make sure the server is running on port 8000.`,
+        content: `⚠️ Error from Copilot Backend (${errMsg}). Please check if the server is running on http://localhost:8000.`,
         timestamp: new Date().toISOString(),
       });
       setError(errMsg);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleChipSelect = (q: string) => {
+    setInput(q);
+    send(q);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -83,14 +89,68 @@ export function ChatThread() {
 
   return (
     <div className="chat-thread">
+      {/* Header bar with quick access to benchmark chips */}
+      <div
+        className="chat-thread__topbar"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '8px 16px',
+          background: 'var(--c-surface)',
+          borderBottom: '1px solid var(--c-border)',
+          fontSize: '12px',
+        }}
+      >
+        <span style={{ color: 'var(--c-text-muted)' }}>
+          Active User: <strong style={{ color: 'var(--c-accent-h)' }}>{currentUser.display_name}</strong>
+          {' '}(Private Thread)
+        </span>
+        <button
+          onClick={() => setShowChips((s) => !s)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '3px 10px',
+            borderRadius: '4px',
+            background: showChips ? 'var(--c-accent)' : 'var(--c-surface2)',
+            color: '#fff',
+            fontWeight: 600,
+            fontSize: '11px',
+          }}
+          title="Toggle 18 benchmark question chips"
+        >
+          {showChips ? 'Hide Benchmark Questions' : '⚡ Benchmark Questions (Q1–Q18)'}
+        </button>
+      </div>
+
+      {/* Expandable chips drawer if toggled */}
+      {showChips && (
+        <div
+          style={{
+            padding: '12px 16px',
+            background: 'var(--c-surface2)',
+            borderBottom: '1px solid var(--c-border)',
+            maxHeight: '260px',
+            overflowY: 'auto',
+          }}
+        >
+          <ExampleChips onSelect={handleChipSelect} />
+        </div>
+      )}
+
       {/* Message list */}
       <div className="chat-thread__messages">
-        {messages.length === 0 && !loading && (
+        {messages.length === 0 && !loading && !showChips && (
           <div className="chat-empty">
             <p className="chat-empty__headline">
-              Ask anything about your wells.
+              Asset Intelligence Copilot
             </p>
-            <ExampleChips onSelect={(q) => { send(q); }} />
+            <p style={{ color: 'var(--c-text-muted)', fontSize: '13px', marginBottom: '16px' }}>
+              Ask plain-English questions about well operations, downtime calculations, oil spills, and regulatory compliance.
+            </p>
+            <ExampleChips onSelect={handleChipSelect} />
           </div>
         )}
 
@@ -123,7 +183,7 @@ export function ChatThread() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask about well downtime, spills, inspections, repairs…"
+            placeholder="Ask about well downtime, spills, inspections, repairs… or pick a question above"
             rows={2}
             disabled={loading}
             aria-label="Chat input"
@@ -137,7 +197,7 @@ export function ChatThread() {
             {loading ? <Loader2 size={18} className="spin" /> : <Send size={18} />}
           </button>
         </div>
-        <p className="chat-hint">Enter to send · Shift+Enter for newline</p>
+        <p className="chat-hint">Enter to send · Shift+Enter for newline · Queries execute as {currentUser.name}</p>
       </div>
     </div>
   );

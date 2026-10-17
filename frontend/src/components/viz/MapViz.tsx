@@ -14,15 +14,20 @@ interface MapVizProps {
 export function MapViz({ spec }: MapVizProps) {
   const hasCoords = spec.data.some(
     (r) =>
-      (r.latitude !== undefined || r.lat !== undefined) &&
-      (r.longitude !== undefined || r.lon !== undefined || r.lng !== undefined)
+      ((r.latitude !== undefined && r.latitude !== null) || (r.lat !== undefined && r.lat !== null)) &&
+      ((r.longitude !== undefined && r.longitude !== null) || (r.lon !== undefined && r.lon !== null) || (r.lng !== undefined && r.lng !== null))
   );
 
   if (!hasCoords) {
     return (
-      <div className="map-fallback">
-        <MapPin size={20} className="map-fallback__icon" />
-        <p>No coordinate data available — showing table instead.</p>
+      <div className="map-viz map-fallback" style={{ padding: '16px', background: 'var(--c-surface)', borderRadius: '8px', border: '1px solid var(--c-border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--c-accent-h)', fontWeight: 600 }}>
+          <MapPin size={18} />
+          <span>Geospatial Map View (Coordinate Fallback)</span>
+        </div>
+        <p style={{ fontSize: '12px', color: 'var(--c-text-muted)', margin: '6px 0 12px 0' }}>
+          Latitude/Longitude coordinates are null in this area dataset — rendering verified tabular geo-records:
+        </p>
         <table className="data-table" style={{ marginTop: 12 }}>
           <thead>
             <tr>

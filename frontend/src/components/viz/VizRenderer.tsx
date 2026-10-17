@@ -64,6 +64,7 @@ export function VizRenderer({ spec }: VizRendererProps) {
   const compat = checkCompatibility(spec);
 
   const viewOptions: Array<{ type: VizType; label: string; icon: React.ReactNode }> = [
+    ...(compat.card ? [{ type: 'card' as VizType, label: 'Card', icon: <Table2 size={13} /> }] : []),
     { type: 'table', label: 'Table', icon: <Table2 size={13} /> },
     { type: 'line', label: 'Line', icon: <LineChart size={13} /> },
     { type: 'bar', label: 'Bar', icon: <BarChart2 size={13} /> },
@@ -74,53 +75,51 @@ export function VizRenderer({ spec }: VizRendererProps) {
   return (
     <div className="viz-renderer" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
       {/* View Selector Controls */}
-      {spec.type !== 'card' && (
-        <div
-          className="viz-view-selector"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            background: 'var(--c-surface2)',
-            padding: '3px 6px',
-            borderRadius: '6px',
-            alignSelf: 'flex-start',
-          }}
-        >
-          <span style={{ fontSize: '11px', color: 'var(--c-text-muted)', marginRight: '4px', fontWeight: 600 }}>
-            View:
-          </span>
-          {viewOptions.map((opt) => {
-            const enabled = compat[opt.type];
-            const isSelected = activeType === opt.type;
-            return (
-              <button
-                key={opt.type}
-                disabled={!enabled}
-                onClick={() => setActiveType(opt.type)}
-                title={enabled ? `Show as ${opt.label}` : `${opt.label} view not compatible with this data shape`}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '11px',
-                  padding: '2px 8px',
-                  borderRadius: '4px',
-                  background: isSelected ? 'var(--c-accent)' : 'transparent',
-                  color: isSelected ? '#fff' : enabled ? 'var(--c-text)' : 'var(--c-border)',
-                  cursor: enabled ? 'pointer' : 'not-allowed',
-                  opacity: enabled ? 1 : 0.4,
-                  fontWeight: isSelected ? 600 : 400,
-                  transition: 'background 0.15s',
-                }}
-              >
-                {opt.icon}
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      <div
+        className="viz-view-selector"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          background: 'var(--c-surface2)',
+          padding: '3px 6px',
+          borderRadius: '6px',
+          alignSelf: 'flex-start',
+        }}
+      >
+        <span style={{ fontSize: '11px', color: 'var(--c-text-muted)', marginRight: '4px', fontWeight: 600 }}>
+          View:
+        </span>
+        {viewOptions.map((opt) => {
+          const enabled = compat[opt.type];
+          const isSelected = activeType === opt.type;
+          return (
+            <button
+              key={opt.type}
+              disabled={!enabled}
+              onClick={() => setActiveType(opt.type)}
+              title={enabled ? `Show as ${opt.label}` : `${opt.label} view not compatible with this data shape`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                background: isSelected ? 'var(--c-accent)' : 'transparent',
+                color: isSelected ? '#fff' : enabled ? 'var(--c-text)' : 'var(--c-border)',
+                cursor: enabled ? 'pointer' : 'not-allowed',
+                opacity: enabled ? 1 : 0.4,
+                fontWeight: isSelected ? 600 : 400,
+                transition: 'background 0.15s',
+              }}
+            >
+              {opt.icon}
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
 
       {/* Render Component */}
       <div className="viz-content">
