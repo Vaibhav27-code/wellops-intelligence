@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Literal
 
 from backend.app.calc.rules import assess_spill, load_spill_rules, spill_report_status
@@ -143,7 +143,17 @@ def query_metric(
                     report_event = next((event for event in related if event.get("event_type") == "spill_report_filed"), None)
                     hours = report_event.get("hours_to_report") if report_event else None
                     status = spill_report_status(hours, {**spill, "hours_to_report": hours})
-                    missed = status == "missed" or (status == "unknown" and str(inspection.get("inspected_at", ""))[:10] <= end)
+                    missed = status == "missed"
+                    if status == "unknown" and report_event is None and spill.get("report_deadline_hours") is not None:
+                        try:
+                            discovered = datetime.fromisoformat(str(inspection["inspected_at"]).replace("Z", "+00:00"))
+                            if discovered.tzinfo is None:
+                                discovered = discovered.replace(tzinfo=timezone.utc)
+                            deadline = discovered + timedelta(hours=float(spill["report_deadline_hours"]))
+                            cutoff = datetime.combine(date.fromisoformat(end), time.max, tzinfo=timezone.utc)
+                            missed = deadline <= cutoff
+                        except (KeyError, TypeError, ValueError):
+                            missed = False
                     if missed:
                         evidence.append({
                             "well_id": asset_id,

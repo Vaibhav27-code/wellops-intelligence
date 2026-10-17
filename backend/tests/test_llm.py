@@ -157,6 +157,7 @@ def test_total_failure_uses_rules_and_deterministic_template(
     assert result["citations"] == [{"id": "INS-1"}]
     assert captured[0].intent == "downtime"
     assert raw.calls == 1
+    assert result["provider_path"] == "rules"
     assert secret not in caplog.text
     assert "private chat contents" not in caplog.text
 
@@ -197,6 +198,23 @@ def test_rules_extract_entities_and_period_phrases() -> None:
     assert extract_intent("Compare shutdowns over the past four months.").date_phrase == "past four months"
 
 
+def test_rules_extract_general_metric_filters_and_grouping() -> None:
+    intent = extract_intent(
+        "Summarize T350 downtime per well type in Northeast Block 7 from 2025-01-01 to 2025-03-31."
+    )
+    assert intent.metric == "downtime_days"
+    assert intent.group_by == "well_type"
+    assert intent.area_name == "Northeast Block 7"
+    assert intent.well_type == "T350"
+    assert intent.date_from == "2025-01-01"
+    assert intent.date_to == "2025-03-31"
+
+    assert extract_intent("Which spill reports were filed late last quarter?").metric == "late_reports"
+    containment = extract_intent("List spills that breached the containment SOP limit this summer.")
+    assert containment.metric == "containment_breaches"
+    assert containment.season == "summer"
+
+
 def test_valid_intent_then_answer_wording_uses_two_generation_calls(tmp_path: Path) -> None:
     intent_json = Intent(intent="well_status", well_ids=["WELL-0001"]).model_dump_json()
     raw = FakeClient(responses=[intent_json, "WELL-0001 is not producing."])
@@ -212,6 +230,7 @@ def test_valid_intent_then_answer_wording_uses_two_generation_calls(tmp_path: Pa
     assert raw.calls == 2
     assert result["answer"] == "WELL-0001 is not producing."
     assert result["citations"] == [{"id": "INS-1"}]
+    assert result["provider_path"] == "llm"
 
 
 def test_reliability_wrapper_enforces_hard_timeout(tmp_path: Path) -> None:

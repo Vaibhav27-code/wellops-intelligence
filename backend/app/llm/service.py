@@ -90,6 +90,7 @@ class LLMQuestionService:
             result = {"answer": str(result), "citations": [], "visualization": None}
         result["intent"] = intent.model_dump()
         result["answer"] = _template_answer(result)
+        result["provider_path"] = "llm" if extraction_succeeded else "rules"
 
         # A normal request uses one extraction call and one wording call. If validation
         # needed its one permitted retry, the remaining budget is used up by extraction.

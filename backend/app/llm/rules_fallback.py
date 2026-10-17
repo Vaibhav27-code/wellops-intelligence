@@ -35,14 +35,31 @@ class Intent(BaseModel):
     intent: IntentName = "general"
     well_ids: list[str] = Field(default_factory=list)
     area_name: str | None = None
+    well_type: str | None = None
+    date_from: str | None = None
+    date_to: str | None = None
     season: Literal["spring", "summer", "autumn", "fall", "winter"] | None = None
     quarter: Literal["Q1", "Q2", "Q3", "Q4"] | None = None
     year: int | None = None
     date_phrase: str | None = None
+    metric: Literal[
+        "downtime_days",
+        "spill_volume",
+        "repair_cost",
+        "late_reports",
+        "containment_breaches",
+    ] | None = None
+    group_by: Literal["well", "area", "month", "well_type"] = "well"
+    limit: int | None = Field(default=None, ge=1, le=100)
     keywords: list[str] = Field(default_factory=list)
 
 
 _WELL_RE = re.compile(r"\bWELL-\d{4}\b", re.IGNORECASE)
+_WELL_TYPE_RE = re.compile(r"\bT\d{3}\b", re.IGNORECASE)
+_EXPLICIT_RANGE_RE = re.compile(
+    r"\b(?:from|between)\s+(\d{4}-\d{2}-\d{2})\s+(?:to|and)\s+(\d{4}-\d{2}-\d{2})\b",
+    re.IGNORECASE,
+)
 _DATE_RE = re.compile(
     r"\b(?:last|past|previous|this|during|in|since|from)\s+(?:the\s+)?(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen)\s+(?:days?|weeks?|months?|years?)\b|"
     r"\b(?:last|past|previous|this|during|in|since|from)\s+(?:the\s+)?(?:\d{4}|spring|summer|autumn|fall|winter|(?:first|second|third|fourth|[1-4](?:st|nd|rd|th)?)\s+quarter)\b",
@@ -95,6 +112,8 @@ def extract_intent(question: str) -> Intent:
     date_match = _DATE_RE.search(question)
     date_phrase = date_match.group(0) if date_match else None
     quarter = _extract_quarter(question)
+    date_range_match = _EXPLICIT_RANGE_RE.search(question)
+    well_type_match = _WELL_TYPE_RE.search(question)
 
     keyword_rules = {
         "downtime": r"\b(down|downtime|offline|shut[- ]*in)\b",
@@ -105,6 +124,30 @@ def extract_intent(question: str) -> Intent:
         "memory": r"\b(remember|discussed|yesterday|previous (?:conversation|chat)|last (?:conversation|chat)|history)\b",
     }
     keywords = [name for name, pattern in keyword_rules.items() if re.search(pattern, text, re.IGNORECASE)]
+
+    metric = None
+    if re.search(r"\b(containment|contained)\b", text) and re.search(r"\b(breach|breaches|limit|sop|time)\b", text):
+        metric = "containment_breaches"
+    elif re.search(r"\b(late|overdue|missed|unfiled)\b.{0,25}\breports?\b|\breports?\b.{0,25}\b(late|overdue|missed|unfiled)\b", text):
+        metric = "late_reports"
+    elif "repair_cost" in keywords:
+        metric = "repair_cost"
+    elif "downtime" in keywords:
+        metric = "downtime_days"
+    elif "spill" in keywords:
+        metric = "spill_volume"
+
+    if re.search(r"\b(by|per|each)\s+(?:geographic\s+)?areas?\b|\barea(?:-by-|\s+by\s+)month", text):
+        group_by = "area"
+    elif re.search(r"\b(by|per|each)\s+months?\b|\bmonthly\b|\bheatmap\b", text):
+        group_by = "month"
+    elif re.search(r"\b(by|per|each)\s+well[- ]types?\b", text):
+        group_by = "well_type"
+    else:
+        group_by = "well"
+
+    limit_match = re.search(r"\b(?:top|the)\s+(\d{1,2})\b", text)
+    limit = int(limit_match.group(1)) if limit_match else None
 
     private_memory = bool(re.search(r"\b(we discussed|i discussed|remember|yesterday|previous (?:conversation|chat)|last (?:conversation|chat)|our last chat)\b", text))
     shared_memory = bool(re.search(r"\b(for everyone|for all|team now wants|shared notice|shared memory)\b", text))
@@ -141,10 +184,16 @@ def extract_intent(question: str) -> Intent:
         intent=intent,
         well_ids=well_ids,
         area_name=area_name,
+        well_type=well_type_match.group(0).upper() if well_type_match else None,
+        date_from=date_range_match.group(1) if date_range_match else None,
+        date_to=date_range_match.group(2) if date_range_match else None,
         season=season_match.group(1).casefold() if season_match else None,
         quarter=quarter,
         year=int(year_match.group(1)) if year_match else None,
         date_phrase=date_phrase,
+        metric=metric,
+        group_by=group_by,
+        limit=limit,
         keywords=keywords,
     )
 

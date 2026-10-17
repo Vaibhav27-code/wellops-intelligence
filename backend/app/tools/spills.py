@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import calendar
 from datetime import date
 from typing import Any
 
@@ -113,48 +112,3 @@ def get_all_real_spills(
 
     real_spills.sort(key=lambda s: s["date"])
     return real_spills
-
-
-def get_area_spills_summary_for_heatmap(year: int | None = None, as_of: str | None = None) -> dict[str, Any]:
-    as_of = as_of or get_reference_date()
-    reference_date = date.fromisoformat(as_of[:10])
-    year = year or reference_date.year
-    areas = query_records("area")
-    area_map = {a.get("area_id"): a.get("name") for a in areas}
-
-    start_date = f"{year}-01-01"
-    year_end = f"{year}-12-31"
-    end_date = min(as_of[:10], year_end)
-    spills = get_all_real_spills(start_date=start_date, end_date=end_date, as_of=as_of)
-
-    last_month = reference_date.month if year == reference_date.year else 12
-    months = [calendar.month_abbr[month] for month in range(1, last_month + 1)]
-    month_indices = {index + 1: month for index, month in enumerate(months)}
-
-    grid: dict[str, dict[str, int]] = {a_name: {m: 0 for m in months} for a_name in area_map.values()}
-
-    for s in spills:
-        a_id = s.get("area_id")
-        a_name = area_map.get(a_id)
-        if not a_name:
-            continue
-        s_date = date.fromisoformat(s["date"])
-        if s_date.year == year and s_date.month in month_indices:
-            m_name = month_indices[s_date.month]
-            grid[a_name][m_name] += 1
-
-    table_rows = []
-    for a_name, m_counts in grid.items():
-        total = sum(m_counts.values())
-        row = {"Area": a_name, **m_counts, "Total": total}
-        table_rows.append(row)
-
-    table_rows.sort(key=lambda row: str(row["Area"]).casefold())
-
-    return {
-        "year": year,
-        "months": months,
-        "areas": list(grid.keys()),
-        "rows": table_rows,
-        "spills_count": len(spills),
-    }
