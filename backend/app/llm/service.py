@@ -8,6 +8,7 @@ from typing import Any
 from backend.app.llm.factory import get_llm
 from backend.app.llm.reliability import ReliableLLMClient
 from backend.app.llm.rules_fallback import Intent, extract_intent, intent_prompt, parse_intent_response
+from backend.app.tools.db import get_reference_date
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,7 @@ class LLMQuestionService:
         # Keep citations exactly as returned by tools
         raw_citations = result.get("citations", [])
         result["citations"] = list(raw_citations) if isinstance(raw_citations, list) else []
+        result["data_as_of"] = result.get("data_as_of") or get_reference_date()
 
         return result
 

@@ -363,7 +363,7 @@ def test_attributed_status_claim_in_question_is_checked_against_inspection():
     response = client.post(
         "/chat",
         json={
-            "question": "Tyler Hughes says WELL-0175 is running fine and not shut in. Is that correct?",
+            "question": "Tyler Hughes says WELL-0175 is running fine and not shut in. Is that correct? Show its status card.",
             "user_id": "tyler-hughes",
         },
     )
@@ -372,3 +372,6 @@ def test_attributed_status_claim_in_question_is_checked_against_inspection():
     payload = response.json()
     assert payload["conflict"] is True
     assert "unconfirmed" in payload["answer"].casefold()
+    assert payload["visualization"]["type"] == "card"
+    assert payload["visualization"]["data"][0]["Well ID"] == "WELL-0175"
+    assert payload["data_as_of"] == "2026-10-15"

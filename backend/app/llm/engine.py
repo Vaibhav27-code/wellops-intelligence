@@ -670,7 +670,21 @@ class CopilotEngine:
                 answer += " The inspection evidence conflicts with the status claim; it is recorded as unconfirmed. Please verify in the field."
             elif planned_claim:
                 answer += " The planned status note is recorded for shared operational context."
-            return {"answer": answer, "citations": citations, "visualization": None, "conflict": contradicts, "conflict_message": "User status claim contradicts inspection telemetry." if contradicts else None}
+            visualization = None
+            if "status card" in lower or "status snapshot" in lower:
+                visualization = generate_visualization(
+                    "card",
+                    f"{well_id} Status Snapshot",
+                    [{
+                        "Well ID": well_id,
+                        "Production Status": status.title(),
+                        "Latest Inspection": inspection_date,
+                        "Inspector": inspector,
+                        "Delta": f"{delta} °C",
+                        "Threshold": f"{threshold} °C",
+                    }],
+                )
+            return {"answer": answer, "citations": citations, "visualization": visualization, "conflict": contradicts, "conflict_message": "User status claim contradicts inspection telemetry." if contradicts else None}
 
         return None
 
