@@ -140,3 +140,10 @@ Format: `[time] tool: done / in progress / blocked / next`
 - Temperature thresholds per well type (with manual section/page): unknown; manuals/SOPs are not available.
 - User records / correction mechanism: no source records; frontend currently has in-memory sample users, histories, and corrections only.
 - Risks discovered: source schema, join keys, date formats, thresholds, and official expected questions are unavailable; frontend types and 10 sample prompt chips are provisional and unverified.
+- [12:30 IST] Antigravity: DONE — full React+Vite+TS frontend built, TypeScript 0 errors, production build passes.
+  Components: AppShell, TopBar, UserPicker (3 users), ChatThread (private history per user via Zustand), ExampleChips (10 chips),
+  MessageBubble (avatar, conflict banner, inline viz, citations toggle, correct button), CitationsDrawer (all 7 source types),
+  CorrectionModal (scope=well|well_type, audited fields), VizRenderer (dispatches card/table/line/bar/heatmap/map),
+  StatusCard, DataTable (sortable+filterable), LineChartViz, BarChartViz, HeatmapViz, MapViz+LeafletMapInner (lazy-loaded, coord fallback).
+  Global CSS: full industrial-ops dark theme. VITE_API_URL=http://localhost:8000. Dev server live at http://localhost:5173.
+  Committed: 76bbcdd. Next: wire to real backend once Codex completes ingestion + tools (P1).
