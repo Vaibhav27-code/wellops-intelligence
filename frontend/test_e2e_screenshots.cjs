@@ -92,14 +92,16 @@ async function run() {
   await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '05_bar_chart.png'), fullPage: true });
   console.log('Saved 05_bar_chart.png');
 
-  // 6. Q7: Map View
+  // 6. Q7: Map View with Pins
   console.log('6. Asking Q7 (Map view)...');
   await page.type('.chat-input', 'Show on a map every well in Northeast Block 8 with a real spill in the last 90 days.');
   await page.click('.chat-send-btn');
-  await page.waitForSelector('.leaflet-container, .map-viz, .map-fallback', { timeout: 20000 });
+  await page.waitForSelector('.leaflet-marker-icon', { timeout: 20000 });
+  const pinCount = await page.$$eval('.leaflet-marker-icon', (els) => els.length);
+  console.log(`Found ${pinCount} real Leaflet pins on the map!`);
   await new Promise((r) => setTimeout(r, 2000));
   await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '06_map_view.png'), fullPage: true });
-  console.log('Saved 06_map_view.png');
+  console.log('Saved 06_map_view.png with real leaflet pins');
 
   // 7. Q8: Heatmap View
   console.log('7. Asking Q8 (Heatmap view)...');

@@ -139,11 +139,12 @@ Format: `[time] tool: done / in progress / blocked / next`
 - [12:55 IST] Antigravity: P0-P3 completed / verified: 30/30 pytest tests passing across test_evaluation_queries.py, test_health.py, test_ingest_and_calc.py, and test_llm.py / React+Vite frontend built and verified / docs/eval_report.md, docs/writeup.md, and docs/demo_script.md fully written / ready for git commit and test dataset freeze.
 - [12:59 IST] Codex: added Gemini, Ollama, and rules providers; SQLite response cache; 429/5xx retry with jitter; 30-second hard timeout; Pydantic intent validation; rules and templated fallbacks; `/chat` and `/health` wiring / verified: 34 pytest tests pass from `backend/`, mocked Gemini/Ollama requests pass, and local Uvicorn health/chat smoke checks pass; Gemini key is absent, so the default generation check stops before network access; `.env` is absent and ignored / next: add the key to local `.env` and rerun the real Gemini smoke test; commit locally without pushing.
 - [13:12 IST] Antigravity: wired full /chat response contract (answer_text, citations[], calculation_explanation, conflicts[], visualization spec); strictly capped at max 2 LLM calls with rules fallback on error/quota; verified private memory isolation per user_id; all 38 pytest tests green; live uvicorn server verified with 4 curl query flows / done: /chat contract, test coverage, and curl smoke checks / blocked: none / next: commit and push to GitHub.
+- [14:03 IST] Codex: generalized metrics/date handling and rules extraction; added the question runner and pandas ground-truth plus mutated-dataset checks; fixed spill-correction propagation, Gemini JSON-schema compatibility, explicit-year precedence, and inspection-linked conflict citations / verified: 55 pytest tests pass (one existing deprecation warning); 26/26 sequential actions pass with `LLM_PROVIDER=rules` (`provider_path=rules` x26) and 26/26 pass with `LLM_PROVIDER=gemini` (`provider_path=llm` x26 in the final cache-backed replay); final source audit clean across 200 sample asset IDs, 15 names, and 4 areas; `.env` ignored and untracked; no new changes pushed / note: an older public commit contains one synthetic `AIza`-shaped health-test fixture, not equal to the local `.env` key / next: rerun ingestion and evaluation on any newly released dataset, then complete demo and submission.
 
 ## KNOWN SCHEMAS / FINDINGS (fill in after inspection)
 - Files and formats: official challenge repo cloned to data/raw/flytbase-ahc-swe-asset-intelligence-dataset at b8de8c9bd68f40334e5d06922126169e4f3bf3ca; sample-data has 202 JSON, 800 JSONL, 1,514 Markdown files; 200 wells, 39,567 inspections, 5,665 maintenance jobs, 90 regulator events, 141 context notes, 1,509 repair reports.
 - Join keys: asset_id across per-well records; inspection_id references; user_id, team_id, area_id; report_file resolves maintenance reports.
-- Date fields and formats: timestamps are ISO 8601 UTC; date/installed_on/valid_from/valid_to are YYYY-MM-DD. Evaluation reference date is 2026-10-16.
+- Date fields and formats: timestamps are ISO 8601 UTC; date/installed_on/valid_from/valid_to are YYYY-MM-DD. The sample reference date is 2026-10-15 (latest inspection timestamp), overridable via `REFERENCE_DATE`.
 - Temperature thresholds: T200 >=15 C above ambient (manual section 9.3), T350 >=20 C (section 3).
 - User records / correction mechanism: 15 users in fleet/users.json; 56 source correction notes name an inspection_id and preserve source text; 82 operator notes and 3 feedback notes are distinct note types.
 - Risks discovered: recorded_status can be stale; planned shut-ins may only be in notes; repair downtime_hours is not the downtime calculation; report_file paths vary; image references have no image files; all source-linked corrections and user disagreements must preserve provenance.
@@ -179,5 +180,11 @@ Format: `[time] tool: done / in progress / blocked / next`
   - Verified Correction Modal (scope, original vs corrected, reason, evidence) -> Submitted -> Verified entry in right-hand audit sidebar.
   - 10 screenshots saved to `docs/screenshots/`.
   - TypeScript build: 0 errors (`npm run build`). Responsive layout verified down to 380px and 15px base font for video projector readability.
+- [14:03 IST] Antigravity: VERIFIED MAP PINS & COPY MARKDOWN — all 4/4 tasks verified.
+  - Leaflet Map fixed with direct synchronous loading, explicit 380px height, area coordinate resolution, and custom SVG markers. Verified with Puppeteer waiting for `.leaflet-marker-icon`; screenshot updated at `docs/screenshots/06_map_view.png`.
+  - Added "Copy as Markdown" button on every assistant message; copies structured question, answer, calculation rule, table data, and citations to clipboard; verified click state `✓ Copied!`.
+  - Executed 3 unseen questions (SW-23 repair costs, T200 2025 downtime, SW-24 2025 spills) in browser: all 3 rendered clean responses without crashing; screenshot saved at `docs/screenshots/11_unseen_questions_check.png`.
+  - `npm run build` passes with 0 errors.
+
 
 

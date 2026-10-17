@@ -22,8 +22,10 @@ function checkCompatibility(spec: VisualizationSpec): Record<VizType, boolean> {
   const first = data[0];
   const keys = Object.keys(first);
 
-  // Map requires lat/latitude and lon/longitude
-  const hasGeo = ('latitude' in first || 'lat' in first) && ('longitude' in first || 'lon' in first);
+  // Map enabled when spec is a map or data contains coordinates/well IDs
+  const hasGeo = spec.type === 'map' ||
+                 (('latitude' in first || 'lat' in first) && ('longitude' in first || 'lon' in first)) ||
+                 ('well_id' in first && /WELL-/i.test(String(first.well_id)));
 
   // Heatmap requires month/date and area/location and numeric count/value
   const hasHeatmap = ('month' in first || 'month_str' in first || 'date' in first) &&

@@ -4,16 +4,18 @@ import { VizRenderer } from './viz/VizRenderer';
 import { CitationsDrawer } from './CitationsDrawer';
 import { CorrectionModal } from './CorrectionModal';
 import { useStore } from '../store';
-import { BookOpen, AlertTriangle, Edit3, ChevronDown, ChevronRight, User, Bot } from 'lucide-react';
+import { BookOpen, AlertTriangle, Edit3, ChevronDown, ChevronRight, User, Bot, Copy, Check } from 'lucide-react';
 
 interface MessageBubbleProps {
   message: ChatMessage;
 }
 
 export function MessageBubble({ message }: MessageBubbleProps) {
-  const { currentUser, activeCitationMsgId, setActiveCitationMsgId } = useStore();
+  const { currentUser, histories, activeCitationMsgId, setActiveCitationMsgId } = useStore();
   const [showCorrection, setShowCorrection] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
 
+  const messages = histories[currentUser.user_id] ?? [];
   const isUser = message.role === 'user';
   const citationsOpen = activeCitationMsgId === message.id;
   const hasCitations = (message.citations ?? []).length > 0;
@@ -27,6 +29,82 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     hour: '2-digit',
     minute: '2-digit',
   });
+
+  const handleCopyMarkdown = async () => {
+    // Find preceding user question if available
+    const myIndex = messages.findIndex((m) => m.id === message.id);
+    let questionText = '';
+    if (myIndex > 0) {
+      for (let i = myIndex - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          questionText = messages[i].content;
+          break;
+        }
+      }
+    }
+
+    const lines: string[] = [];
+    if (questionText) {
+      lines.push(`### Question\n${questionText}\n`);
+    }
+    lines.push(`### Answer\n${message.content}\n`);
+
+    if (message.calculation_explanation) {
+      lines.push(`### Calculation Rule\n${message.calculation_explanation}\n`);
+    }
+
+    if (message.conflict || (message.conflicts && message.conflicts.length > 0)) {
+      lines.push('### Discrepancies & Conflicts');
+      if (message.conflict_message) {
+        lines.push(`- ${message.conflict_message}`);
+      }
+      if (message.conflicts) {
+        message.conflicts.forEach((c) => lines.push(`- ${c}`));
+      }
+      lines.push('');
+    }
+
+    // Include table / data if visualization has tabular rows
+    if (message.visualization && Array.isArray(message.visualization.data) && message.visualization.data.length > 0) {
+      const data = message.visualization.data;
+      const cols = message.visualization.columns || Object.keys(data[0]);
+      lines.push(`### Data: ${message.visualization.title || 'Table'}`);
+      lines.push(`| ${cols.join(' | ')} |`);
+      lines.push(`| ${cols.map(() => '---').join(' | ')} |`);
+      for (const row of data) {
+        lines.push(`| ${cols.map((col) => String(row[col] ?? '—')).join(' | ')} |`);
+      }
+      lines.push('');
+    }
+
+    if (message.citations && message.citations.length > 0) {
+      lines.push('### Citations');
+      message.citations.forEach((c) => {
+        const file = c.source_file || c.filename || 'Source Document';
+        const sec = c.section ? ` · ${c.section}` : '';
+        const rec = c.record_id || c.id ? ` · ID: ${c.record_id || c.id}` : '';
+        const dt = c.date ? ` · Date: ${c.date}` : '';
+        lines.push(`- **[${c.source_type}]** \`${file}\`${sec}${rec}${dt}`);
+        if (c.excerpt) {
+          lines.push(`  > "${c.excerpt}"`);
+        }
+      });
+      lines.push('');
+    }
+
+    if (message.data_as_of) {
+      lines.push(`*Data evaluated as of: ${message.data_as_of}*\n`);
+    }
+
+    const md = lines.join('\n');
+    try {
+      await navigator.clipboard.writeText(md);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.warn('Clipboard write failed:', e);
+    }
+  };
 
   return (
     <div className={`message-bubble ${isUser ? 'message-bubble--user' : 'message-bubble--assistant'}`}>
@@ -161,6 +239,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               <BookOpen size={12} />
               {(message.citations ?? []).length} source{(message.citations ?? []).length !== 1 ? 's' : ''}
               {citationsOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            </button>
+          )}
+
+          {!isUser && (
+            <button
+              className="msg-btn msg-btn--copy"
+              onClick={handleCopyMarkdown}
+              title="Copy answer, data, and citations as Markdown"
+            >
+              {copied ? <Check size={12} color="var(--c-ok)" /> : <Copy size={12} />}
+              {copied ? 'Copied!' : 'Copy as Markdown'}
             </button>
           )}
 

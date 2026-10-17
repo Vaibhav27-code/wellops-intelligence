@@ -1,9 +1,9 @@
 # Asset Intelligence Copilot: Evaluation Report
 
-**Evaluation Date:** Sat 17 Oct 2026  
-**Reference Date for Evaluation:** 16 Oct 2026  
-**Dataset:** FlytBase Asset Intelligence Challenge Dataset (200 wells, 39,567 inspections, 5,665 maintenance jobs, 90 regulator events, 141 context notes, 1,514 documents)  
-**Test Suite Status:** 23 / 23 unit & integration tests passing (`pytest`)  
+**Evaluation Date:** Sat 17 Oct 2026<br>
+**Reference Date for Evaluation:** 15 Oct 2026 (latest inspection timestamp; overridable with `REFERENCE_DATE`)<br>
+**Dataset:** FlytBase Asset Intelligence Challenge Dataset (200 wells, 39,567 inspections, 5,665 maintenance jobs, 90 regulator events, 141 context notes, 1,655 indexed documents)<br>
+**Test Suite Status:** 55 / 55 backend tests passing (`pytest`; one existing Starlette/httpx deprecation warning)<br>
 **Frontend Build Status:** React + Vite + TypeScript (0 errors, production build passes)
 
 ---
@@ -42,3 +42,18 @@
 - [x] **Memory Isolation:** Strict partition of conversation history by `user_id`.
 - [x] **Conflict Transparency:** Discrepancies between telemetry, human notes, and user claims are surfaced with conflict banners and multi-source citations.
 - [x] **Visual Generation:** Generates valid schema-compliant specs for card, table, line, bar, map, and heatmap with responsive table view-switchers.
+
+## 3. Generalization Hardening and Provider Runs
+
+The question runner exercised 26 sequential API actions covering the 18 benchmark questions, including correction, memory, and follow-up turns. Each action was checked for its expected answer evidence and visualization type.
+
+| Provider setting | Actions checked | Passing | `provider_path` observed |
+|---|---:|---:|---|
+| `LLM_PROVIDER=rules` | 26 | 26 / 26 | `rules` for all 26 |
+| `LLM_PROVIDER=gemini` | 26 | 26 / 26 | `llm` for all 26 in the final clean replay |
+
+The final Gemini replay used the SQLite response cache. An earlier uncached run encountered HTTP 429 responses; retry and deterministic rules fallback were observed. The Gemini API key was verified through the boolean `/health` field only and was never printed. The backend tests also verify that log output does not contain the configured secret.
+
+Independent pandas calculations over all wells passed for downtime, spill volume, and repair cost. The same checks passed after a temporary dataset copy had its dates shifted, asset IDs renamed, and selected inspections deleted. A dataset-driven source audit found no sample asset IDs, user names, area names, date literals, example-labeled comments, or retired question-specific tool names in `backend/app`.
+
+The final Q5 replay returns 21 downtime days for 2025. The Q13 correction is reflected by later spill queries as 5.4 bbl and reportable. Q18 surfaces both inspection-linked human interpretations, sets the conflict flag, and cites the linked maintenance report.

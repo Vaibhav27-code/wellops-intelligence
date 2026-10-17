@@ -297,6 +297,7 @@ input, textarea, select { font: inherit; }
 .msg-btn:hover { color: var(--c-text); background: var(--c-surface2); border-color: var(--c-border); }
 .msg-btn--citations:hover { color: var(--c-accent); }
 .msg-btn--correct:hover { color: var(--c-ok); }
+.msg-btn--copy:hover { color: var(--c-accent-h); }
 
 /* ── Typing indicator ──────────────────────────────────────────────── */
 .typing-indicator {
