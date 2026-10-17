@@ -5,14 +5,15 @@ from .data_tools import (
     search_regulator_events,
     search_repairs,
 )
-from .downtime import get_top_downtime_wells_in_area, get_well_downtime
+from .downtime import get_well_downtime
+from .metrics import query_metric
 from .repairs import (
-    get_containment_breaches_in_area,
-    get_pump_jack_rca_wells,
+    find_containment_breaches,
+    find_maintenance_patterns,
     get_well_repairs_cost,
 )
 from .search import search_human_notes, search_manuals_and_sops
-from .spills import get_all_real_spills, get_area_spills_summary_for_heatmap
+from .spills import get_all_real_spills
 from .viz import generate_visualization
 from .wells import get_latest_inspection, get_well_details, search_wells
 
@@ -21,12 +22,11 @@ __all__ = [
     "get_well_details",
     "get_latest_inspection",
     "get_well_downtime",
-    "get_top_downtime_wells_in_area",
+    "query_metric",
     "get_all_real_spills",
-    "get_area_spills_summary_for_heatmap",
     "get_well_repairs_cost",
-    "get_pump_jack_rca_wells",
-    "get_containment_breaches_in_area",
+    "find_maintenance_patterns",
+    "find_containment_breaches",
     "search_manuals_and_sops",
     "search_human_notes",
     "generate_visualization",

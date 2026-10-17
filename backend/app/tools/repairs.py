@@ -34,19 +34,31 @@ def get_well_repairs_cost(well_id: str, year: int | None = None) -> dict[str, An
     }
 
 
-def get_pump_jack_rca_wells(
-    area_name: str | None = None,
+def find_maintenance_patterns(
+    *,
+    area: str | None = None,
+    well_type: str | None = None,
+    well_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    equipment_kind: str = "pump_jack",
+    maintenance_type: str = "corrective",
     as_of: str | None = None,
 ) -> list[dict[str, Any]]:
     as_of = as_of or get_reference_date()
-    # Map area name to area_id
+    date_to = date_to or as_of
     areas = query_records("area")
-    target_area = next((a for a in areas if area_name and a.get("name", "").casefold() == area_name.casefold()), None)
-    if area_name and not target_area:
+    target_area = next((a for a in areas if area and area.casefold() in {str(a.get("name", "")).casefold(), str(a.get("area_id", "")).casefold()}), None)
+    if area and not target_area:
         return []
     area_id = target_area.get("area_id") if target_area else None
     wells = query_records("well")
-    area_wells = [w for w in wells if area_id is None or w.get("area_id") == area_id]
+    area_wells = [
+        w for w in wells
+        if (area_id is None or w.get("area_id") == area_id)
+        and (well_type is None or str(w.get("well_type", "")).casefold() == well_type.casefold())
+        and (well_id is None or str(w.get("asset_id", "")).casefold() == well_id.casefold())
+    ]
 
     as_of_date = date.fromisoformat(as_of)
 
@@ -63,10 +75,10 @@ def get_pump_jack_rca_wells(
         wid = w.get("asset_id")
         wtype = w.get("well_type", "T200")
         rule = load_rca_rule(str(wtype), get_sample_data_root())
-        window_start = _subtract_months(as_of_date, rule.window_months).isoformat()
+        window_start = date_from or _subtract_months(as_of_date, rule.window_months).isoformat()
 
         # Check for threshold override
-        override = rca_threshold_override(w, "pump_jack", corrections)
+        override = rca_threshold_override(w, equipment_kind, corrections)
         if override:
             threshold = int(float(override.get("corrected_value", 3)))
             is_custom = True
@@ -79,9 +91,9 @@ def get_pump_jack_rca_wells(
         repairs = query_records("maintenance", asset_id=wid)
         corrective_pj_repairs = [
             m for m in repairs
-            if m.get("equipment_kind") == "pump_jack"
-            and m.get("maintenance_type") == "corrective"
-            and window_start <= str(m.get("started_at", ""))[:10] <= as_of
+            if m.get("equipment_kind") == equipment_kind
+            and m.get("maintenance_type") == maintenance_type
+            and window_start <= str(m.get("started_at", ""))[:10] <= date_to
         ]
 
         if len(corrective_pj_repairs) >= threshold:
@@ -106,27 +118,34 @@ def get_pump_jack_rca_wells(
     return qualifying_wells
 
 
-def get_containment_breaches_in_area(
-    area_name: str | None = None,
-    days: int = 90,
+def find_containment_breaches(
+    *,
+    area: str | None = None,
+    well_type: str | None = None,
+    well_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
     as_of: str | None = None,
     sop_limit_hours: float | None = None,
 ) -> list[dict[str, Any]]:
     as_of = as_of or get_reference_date()
+    date_to = date_to or as_of
     if sop_limit_hours is None:
         sop_limit_hours = float(load_compliance_rules(str(get_sample_data_root())).spill_containment_hours)
     areas = query_records("area")
-    target_area = next((a for a in areas if area_name and a.get("name", "").casefold() == area_name.casefold()), None)
-    if area_name and not target_area:
+    target_area = next((a for a in areas if area and area.casefold() in {str(a.get("name", "")).casefold(), str(a.get("area_id", "")).casefold()}), None)
+    if area and not target_area:
         return []
     area_id = target_area.get("area_id") if target_area else None
     wells = query_records("well")
     area_wells = {
         w.get("asset_id"): w for w in wells
         if area_id is None or w.get("area_id") == area_id
+        if well_type is None or str(w.get("well_type", "")).casefold() == well_type.casefold()
+        if well_id is None or str(w.get("asset_id", "")).casefold() == well_id.casefold()
     }
 
-    cutoff_date = (date.fromisoformat(as_of) - timedelta(days=days)).isoformat()
+    cutoff_date = date_from or (date.fromisoformat(date_to) - timedelta(days=90)).isoformat()
 
     conn = get_connection()
     try:
@@ -163,7 +182,7 @@ def get_containment_breaches_in_area(
             if not rel_m:
                 continue
             started_at = str(rel_m.get("started_at", ""))[:10]
-            if not (cutoff_date <= started_at <= as_of):
+            if not (cutoff_date <= started_at <= date_to):
                 continue
 
             iid = rel_m.get("triggered_by_inspection_id")

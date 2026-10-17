@@ -18,17 +18,14 @@ from backend.app.memory.store import (
     retrieve_shared_memory,
 )
 from backend.app.tools.db import get_db_path, get_reference_date, get_sample_data_root, query_records
-from backend.app.tools.downtime import get_top_downtime_wells_in_area, get_well_downtime
+from backend.app.tools.downtime import get_well_downtime
+from backend.app.tools.metrics import query_metric
 from backend.app.tools.repairs import (
-    get_containment_breaches_in_area,
-    get_pump_jack_rca_wells,
+    find_maintenance_patterns,
     get_well_repairs_cost,
 )
 from backend.app.tools.search import search_manuals_and_sops
-from backend.app.tools.spills import (
-    get_all_real_spills,
-    get_area_spills_summary_for_heatmap,
-)
+from backend.app.tools.spills import get_all_real_spills
 from backend.app.tools.viz import generate_visualization
 from backend.app.tools.wells import get_latest_inspection, get_well_details, search_wells
 
@@ -958,7 +955,17 @@ class CopilotEngine:
         # Q6: Which wells in area had the most downtime in last 4 months? Show a bar chart.
         if "most downtime" in lower or ("downtime in" in lower and ("bar chart" in lower or "last 4 months" in lower)):
             area_name = "Northeast Block 7" if "block 7" in lower else "Northeast Block 8" if "block 8" in lower else "Southwest Block 24"
-            top_wells = get_top_downtime_wells_in_area(area_name, top_n=3, start="2026-06-16", end="2026-10-16")
+            downtime = query_metric(
+                "downtime_days",
+                area=area_name,
+                date_phrase=(intent.date_phrase if intent and intent.date_phrase else "last 4 months"),
+                group_by="well",
+                reference_date=self.as_of,
+            )
+            top_wells = [
+                {"well_id": row["group"], "downtime_days": row["value"], "well_type": row["records"][0].get("well_type")}
+                for row in downtime["rows"][:3]
+            ]
 
             bar_data = [
                 {
@@ -979,7 +986,10 @@ class CopilotEngine:
             )
 
             summary_str = ", ".join([f"**{w['well_id']}**: {w['downtime_days']} days ({w['well_type']})" for w in top_wells])
-            ans = f"In {area_name} over the last 4 months (16 Jun to 16 Oct 2026), the wells with the most downtime are:\n\n{summary_str}."
+            ans = (
+                f"In {area_name} from {downtime['filters']['date_from']} to {downtime['filters']['date_to']}, "
+                f"the wells with the most downtime are:\n\n{summary_str}."
+            )
 
             citations = [
                 {
@@ -1049,23 +1059,40 @@ class CopilotEngine:
 
         # Q8: Heatmap of spills by geographic area and month
         if "heatmap" in lower and "spill" in lower:
-            hm = get_area_spills_summary_for_heatmap(year=2026, as_of=self.as_of)
+            target_year = intent.year if intent and intent.year else int(self.as_of[:4])
+            hm_result = query_metric(
+                "spill_volume",
+                date_from=f"{target_year}-01-01",
+                date_to=self.as_of,
+                group_by="area",
+                reference_date=self.as_of,
+            )
+            month_labels = sorted({str(record.get("date", ""))[:7] for record in hm_result["records"] if record.get("date")})
+            area_rows: dict[str, dict[str, Any]] = {}
+            for record in hm_result["records"]:
+                month = str(record.get("date", ""))[:7]
+                if not month:
+                    continue
+                row = area_rows.setdefault(str(record.get("area")), {"Area": str(record.get("area")), "Total": 0})
+                row[month] = int(row.get(month, 0)) + 1
+                row["Total"] += 1
+            hm_rows = []
+            for row in area_rows.values():
+                hm_rows.append({"Area": row["Area"], **{month: row.get(month, 0) for month in month_labels}, "Total": row["Total"]})
+            hm_rows.sort(key=lambda row: str(row["Area"]).casefold())
 
             viz = generate_visualization(
                 "heatmap",
-                "2026 Spills by Area and Month",
-                hm["rows"],
+                f"{target_year} Spills by Area and Month",
+                hm_rows,
                 x="Area",
                 units="spills",
             )
 
-            ans = (
-                f"Heatmap of confirmed 2026 oil spills by geographic area and month (Jan–Oct 2026, false positives excluded):\n\n"
-                f"• **Southwest Block 24**: 43 spills (highest)\n"
-                f"• **Northeast Block 7**: 37 spills\n"
-                f"• **Southwest Block 23**: 35 spills\n"
-                f"• **Northeast Block 8**: 26 spills"
-            )
+            area_totals = sorted(((row["Area"], row["Total"]) for row in hm_rows), key=lambda item: (-item[1], item[0]))
+            totals_text = "\n".join(f"• **{name}**: {count} spills" for name, count in area_totals)
+            months_label = f"{month_labels[0]} to {month_labels[-1]}" if month_labels else "no dated spill records"
+            ans = f"Heatmap of confirmed {target_year} oil spills by geographic area and month ({months_label}; false positives excluded):\n\n{totals_text}"
 
             citations = [
                 {
@@ -1127,8 +1154,15 @@ class CopilotEngine:
 
         # Q10: Spills not contained within SOP limit in area
         if intent_name == "containment_breach" or "not contained" in lower or ("contained" in lower and "limit" in lower):
-            area_name = "Southwest Block 24" if "block 24" in lower else "Northeast Block 8"
-            breaches = get_containment_breaches_in_area(area_name, days=90, as_of=self.as_of)
+            area_name = intent.area_name if intent and intent.area_name else None
+            breach_query = query_metric(
+                "containment_breaches",
+                area=area_name,
+                date_phrase=(intent.date_phrase if intent and intent.date_phrase else "last 90 days"),
+                group_by="well",
+                reference_date=self.as_of,
+            )
+            breaches = [item["details"] for item in breach_query["records"]]
 
             table_data = [
                 {
@@ -1147,11 +1181,16 @@ class CopilotEngine:
                 table_data,
             )
 
+            breach_lines = [
+                f"• **{b['well_id']}**: Contained after ~{b['containment_hours']} hours "
+                f"(report {b['report_file']}, repair {b['maintenance_id']})."
+                for b in breaches
+            ]
             ans = (
-                f"In {area_name} over the last 90 days, **2 spills** exceeded the 4-hour containment limit:\n\n"
-                f"• **WELL-0082**: Contained after ~7.1 hours (report {breaches[0]['report_file']}, repair {breaches[0]['maintenance_id']}).\n"
-                f"• **WELL-0100**: Contained after ~8.1 hours (report {breaches[1]['report_file']}, repair {breaches[1]['maintenance_id']}).\n\n"
-                f"Note: Containment times are recorded inside the text of the maintenance reports."
+                f"In {area_name or 'the selected fleet'} from {breach_query['filters']['date_from']} "
+                f"to {breach_query['filters']['date_to']}, **{len(breaches)} spills** exceeded the SOP containment limit.\n\n"
+                + "\n".join(breach_lines)
+                + "\n\nContainment times are taken from maintenance-report evidence."
             )
 
             citations = [
@@ -1184,8 +1223,8 @@ class CopilotEngine:
 
         # Q14: Pump jack RCA wells in area
         if intent_name == "rca" or "root-cause" in lower or "rca" in lower:
-            area_name = "Northeast Block 7" if "block 7" in lower else "Northeast Block 8"
-            wells_rca = get_pump_jack_rca_wells(area_name, as_of=self.as_of)
+            area_name = intent.area_name if intent and intent.area_name else None
+            wells_rca = find_maintenance_patterns(area=area_name, as_of=self.as_of)
 
             table_data = [
                 {
@@ -1205,7 +1244,7 @@ class CopilotEngine:
             )
 
             well_names_str = ", ".join([f"**{w['well_id']}** ({w['well_type']})" for w in wells_rca])
-            ans = f"Wells in {area_name} requiring a root-cause analysis on their pump jack: {well_names_str}."
+            ans = f"Wells in {area_name or 'the selected fleet'} requiring a root-cause analysis on their pump jack: {well_names_str}."
 
             citations = [
                 {
