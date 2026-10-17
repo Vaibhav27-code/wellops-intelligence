@@ -24,7 +24,19 @@ def test_question_runner_posts_each_question_and_formats_required_fields() -> No
             },
         )
 
-    questions = _questions({"questions": ["What changed?", {"id": "q2", "question": "Show costs."}]})
+    questions = _questions({
+        "questions": [
+            "What changed?",
+            {"id": "q2", "question": "Show costs."},
+            {
+                "id": "Q1",
+                "label": "Q1: Status Card",
+                "question": "Is WELL-0001 producing?",
+                "group": "single_well",
+                "suggestedUser": "Sample Operator",
+            },
+        ]
+    })
     results = run_questions(
         questions,
         base_url="http://copilot.test",
@@ -36,7 +48,9 @@ def test_question_runner_posts_each_question_and_formats_required_fields() -> No
     assert requests == [
         {"question": "What changed?", "user_id": "runner-user"},
         {"question": "Show costs.", "user_id": "runner-user"},
+        {"question": "Is WELL-0001 producing?", "user_id": "runner-user"},
     ]
     assert "Provider path: `rules`" in report
     assert "Visualization: `table`" in report
+    assert "Latency: `" in report and " ms`" in report
     assert "assets/example.jsonl" in report

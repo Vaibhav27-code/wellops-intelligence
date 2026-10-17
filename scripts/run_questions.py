@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import time
 from typing import Any
 
 import httpx
@@ -45,6 +46,7 @@ def _markdown(results: list[dict[str, Any]]) -> str:
                 "",
                 f"- Provider path: `{result.get('provider_path', 'unknown')}`",
                 f"- Visualization: `{(result.get('visualization') or {}).get('type', 'none')}`",
+                f"- Latency: `{result.get('latency_ms', 'unknown')} ms`",
                 "",
                 "### Answer",
                 "",
@@ -80,20 +82,22 @@ def run_questions(
             }
             if item.get("session_id"):
                 request_body["session_id"] = item["session_id"]
+            started = time.perf_counter()
             response = client.post(
                 "/chat",
                 json=request_body,
             )
             response.raise_for_status()
             payload = response.json()
-            results.append({"scenario_id": item.get("id"), "question": item["question"], **payload})
+            latency_ms = round((time.perf_counter() - started) * 1000, 2)
+            results.append({"scenario_id": item.get("id"), "question": item["question"], "latency_ms": latency_ms, **payload})
     return results
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run questions against the Asset Intelligence Copilot API")
     parser.add_argument("questions_json", type=Path)
-    parser.add_argument("--user-id", default="eval-user")
+    parser.add_argument("--user", "--user-id", dest="user_id", default="eval-user")
     parser.add_argument("--base-url", default=os.getenv("ASSET_INTELLIGENCE_API", "http://localhost:8000"))
     parser.add_argument("--output", type=Path, default=Path("results.md"))
     args = parser.parse_args(argv)
