@@ -88,6 +88,87 @@ def _question_date(text: str, reference_date: str) -> str | None:
         return None
 
 
+def _parameterized_metric_answer(
+    question: str,
+    intent: Intent,
+    reference_date: str,
+) -> dict[str, Any]:
+    """Run a validated metric intent through the shared filtered metrics tool."""
+    metric = intent.metric
+    if metric is None:
+        raise ValueError("A metric intent is required")
+    result = query_metric(
+        metric,
+        area=intent.area_name,
+        well_type=intent.well_type,
+        well_id=intent.well_ids[0] if intent.well_ids else None,
+        date_from=intent.date_from,
+        date_to=intent.date_to,
+        season=intent.season,
+        quarter=intent.quarter,
+        year=intent.year,
+        date_phrase=intent.date_phrase,
+        group_by=intent.group_by,
+        reference_date=reference_date,
+    )
+    rows = result["rows"][: intent.limit] if intent.limit else result["rows"]
+    metric_rows = [
+        {
+            "group": row["group"],
+            metric: row["value"],
+            "record_count": row["record_count"],
+        }
+        for row in rows
+    ]
+    label = metric.replace("_", " ")
+    start = result["filters"]["date_from"]
+    end = result["filters"]["date_to"]
+    if metric_rows:
+        summary = "; ".join(
+            f"{row['group']}: {row[metric]:,.2f} {result['unit']}"
+            for row in metric_rows
+        )
+        answer = f"{label.capitalize()} from {start} through {end}, grouped by {intent.group_by}: {summary}."
+    else:
+        answer = f"No {label} records matched the requested filters from {start} through {end}."
+
+    citations: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in result["records"]:
+        citation = str(record.get("citation") or "")
+        if not citation or citation in seen:
+            continue
+        seen.add(citation)
+        source_file, _, record_id = citation.partition("#")
+        citations.append(
+            {
+                "id": f"cit-{record_id or len(citations)}",
+                "source_type": "repair" if metric == "repair_cost" else "inspection",
+                "source_file": source_file,
+                "record_id": record_id or None,
+                "date": record.get("date"),
+                "well_id": record.get("well_id"),
+                "excerpt": f"{label.capitalize()} contribution: {record.get('value')} {result['unit']}.",
+            }
+        )
+
+    chart_requested = bool(re.search(r"\b(chart|plot|graph|rank|longest|highest|most expensive)\b", question, re.IGNORECASE))
+    visualization = generate_visualization(
+        "bar" if chart_requested else "table",
+        f"{label.capitalize()} by {intent.group_by} ({start} to {end})",
+        metric_rows,
+        x="group",
+        y=metric,
+        units=result["unit"],
+    )
+    return {
+        "answer": answer,
+        "citations": citations,
+        "visualization": visualization,
+        "conflict": False,
+    }
+
+
 class CopilotEngine:
     def __init__(self, as_of: str | None = None):
         self._as_of = as_of
@@ -1374,6 +1455,9 @@ class CopilotEngine:
                 "visualization": None,
                 "conflict": False,
             }
+
+        if intent and intent.metric:
+            return _parameterized_metric_answer(q, intent, self.as_of)
 
         # Fallback search over manuals and SOPs
         docs = search_manuals_and_sops(q, limit=3)
