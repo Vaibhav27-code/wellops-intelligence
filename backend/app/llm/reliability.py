@@ -118,7 +118,7 @@ class ReliableLLMClient(LLMClient):
         key = self.cache.cache_key(self.provider, self.model, system, prompt)
         try:
             cached = self.cache.get(key)
-        except sqlite3.Error:
+        except (OSError, sqlite3.Error):
             cached = None
             logger.warning("LLM cache read failed provider=%s model=%s", self.provider, self.model)
         if cached is not None:
@@ -129,7 +129,7 @@ class ReliableLLMClient(LLMClient):
                 answer = self._call_with_timeout(prompt, system, json_schema)
                 try:
                     self.cache.put(key, answer)
-                except sqlite3.Error:
+                except (OSError, sqlite3.Error):
                     logger.warning("LLM cache write failed provider=%s model=%s", self.provider, self.model)
                 return answer
             except Exception as exc:

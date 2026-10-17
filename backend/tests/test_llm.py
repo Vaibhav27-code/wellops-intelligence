@@ -136,7 +136,7 @@ def test_total_failure_uses_rules_and_deterministic_template(
     tmp_path: Path, caplog, monkeypatch
 ) -> None:
     secret = "AIza-secret-test-value"
-    raw = FakeClient(error=RuntimeError(f"{secret}; private chat contents"))
+    raw = FakeClient(error=ValueError(f"{secret}; private chat contents"))
     client = ReliableLLMClient(raw, cache_path=tmp_path / "llm.db")
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
     caplog.set_level(logging.WARNING, logger="backend.app.llm.service")

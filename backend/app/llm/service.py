@@ -63,13 +63,21 @@ class LLMQuestionService:
                         system=_INTENT_SYSTEM if retry_invalid == 0 else _REPAIR_SYSTEM,
                         json_schema=Intent.model_json_schema(),
                     )
+                except Exception:
+                    # Exception details may contain request content or credentials; never log them.
+                    logger.warning(
+                        "Intent extraction fell back to deterministic rules provider=%s model=%s",
+                        self.client.provider,
+                        self.client.model,
+                    )
+                    break
+                try:
                     intent = parse_intent_response(raw)
                     extraction_succeeded = True
                     break
                 except Exception as exc:
-                    # Exception details may contain request content or credentials; never log them.
                     logger.warning(
-                        "Intent extraction fell back to deterministic rules provider=%s model=%s",
+                        "Intent response failed schema validation provider=%s model=%s",
                         self.client.provider,
                         self.client.model,
                     )
