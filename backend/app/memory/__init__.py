@@ -6,7 +6,9 @@ from .store import (
     open_memory,
     rca_threshold_override,
     record_correction,
+    record_answer_feedback,
     record_shared_note,
+    retrieve_answer_feedback,
     retrieve_private_memory,
     retrieve_shared_memory,
 )
@@ -20,6 +22,8 @@ __all__ = [
     "retrieve_private_memory",
     "append_private_message",
     "record_shared_note",
+    "record_answer_feedback",
+    "retrieve_answer_feedback",
     "apply_corrections_to_inspection",
     "rca_threshold_override",
 ]

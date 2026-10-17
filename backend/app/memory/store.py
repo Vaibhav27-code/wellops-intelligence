@@ -49,6 +49,18 @@ def ensure_schema(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_private_user_time
             ON private_messages(user_id, created_at);
+        CREATE TABLE IF NOT EXISTS answer_feedback (
+            feedback_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            rating TEXT NOT NULL CHECK (rating IN ('positive', 'negative')),
+            comment TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(user_id, message_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_feedback_user_time
+            ON answer_feedback(user_id, updated_at);
         """
     )
 
@@ -189,6 +201,70 @@ def append_private_message(
     row["payload"] = payload or {}
     row.pop("payload_json")
     return row
+
+
+def record_answer_feedback(
+    connection: sqlite3.Connection,
+    *,
+    user_id: str,
+    message_id: str,
+    rating: str,
+    comment: str | None = None,
+) -> dict[str, Any]:
+    user_id = str(user_id).strip()
+    message_id = str(message_id).strip()
+    if not user_id or not message_id:
+        raise ValueError("user_id and message_id are required")
+    if rating not in {"positive", "negative"}:
+        raise ValueError("rating must be 'positive' or 'negative'")
+    comment = str(comment).strip() if comment is not None else None
+    if comment == "":
+        comment = None
+    if comment is not None and len(comment) > 2000:
+        raise ValueError("comment must be 2000 characters or fewer")
+
+    now = _now()
+    existing = connection.execute(
+        "SELECT feedback_id, created_at FROM answer_feedback WHERE user_id = ? AND message_id = ?",
+        (user_id, message_id),
+    ).fetchone()
+    feedback_id = existing["feedback_id"] if existing else str(uuid.uuid4())
+    created_at = existing["created_at"] if existing else now
+    connection.execute(
+        """INSERT INTO answer_feedback(
+               feedback_id, user_id, message_id, rating, comment, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(user_id, message_id) DO UPDATE SET
+               rating = excluded.rating,
+               comment = excluded.comment,
+               updated_at = excluded.updated_at""",
+        (feedback_id, user_id, message_id, rating, comment, created_at, now),
+    )
+    connection.commit()
+    return {
+        "feedback_id": feedback_id,
+        "user_id": user_id,
+        "message_id": message_id,
+        "rating": rating,
+        "comment": comment,
+        "created_at": created_at,
+        "updated_at": now,
+    }
+
+
+def retrieve_answer_feedback(
+    connection: sqlite3.Connection,
+    user_id: str,
+    *,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    rows = connection.execute(
+        """SELECT feedback_id, user_id, message_id, rating, comment, created_at, updated_at
+           FROM answer_feedback WHERE user_id = ?
+           ORDER BY updated_at DESC, feedback_id DESC LIMIT ?""",
+        (str(user_id), max(1, min(limit, 500))),
+    ).fetchall()
+    return [_row(row) for row in rows]
 
 
 def record_shared_note(

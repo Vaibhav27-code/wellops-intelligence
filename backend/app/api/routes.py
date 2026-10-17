@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from backend.app.llm.engine import CopilotEngine
 from backend.app.llm.service import LLMQuestionService
 from backend.app.memory.store import (
     decode_correction,
     open_memory,
+    record_answer_feedback,
     record_correction,
+    retrieve_answer_feedback,
     retrieve_private_memory,
     retrieve_shared_memory,
 )
@@ -56,6 +58,26 @@ class CorrectionRequestModel(BaseModel):
     original_value: Any = None
     evidence: str | None = None
     equipment_kind: str | None = None
+
+
+class FeedbackRequestModel(BaseModel):
+    user_id: str = Field(min_length=1, max_length=128)
+    message_id: str = Field(min_length=1, max_length=256)
+    rating: Literal["positive", "negative"]
+    comment: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("user_id", "message_id")
+    @classmethod
+    def strip_identifiers(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("must not be blank")
+        return value
+
+    @field_validator("comment")
+    @classmethod
+    def normalize_comment(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
 
 
 @router.post("/chat")
@@ -112,6 +134,35 @@ def api_post_correction(req: CorrectionRequestModel) -> dict[str, Any]:
             equipment_kind=req.equipment_kind,
         )
         return {"correction_id": res["correction_id"], "status": "recorded"}
+    finally:
+        conn.close()
+
+
+@router.post("/feedback")
+def api_post_feedback(req: FeedbackRequestModel) -> dict[str, Any]:
+    conn = open_memory(get_db_path())
+    try:
+        feedback = record_answer_feedback(
+            conn,
+            user_id=req.user_id,
+            message_id=req.message_id,
+            rating=req.rating,
+            comment=req.comment,
+        )
+        return {
+            "feedback_id": feedback["feedback_id"],
+            "rating": feedback["rating"],
+            "status": "recorded",
+        }
+    finally:
+        conn.close()
+
+
+@router.get("/feedback/{user_id}")
+def api_get_feedback(user_id: str) -> dict[str, Any]:
+    conn = open_memory(get_db_path())
+    try:
+        return {"feedback": retrieve_answer_feedback(conn, user_id=user_id)}
     finally:
         conn.close()
 
