@@ -79,18 +79,29 @@ def load_rca_rule(well_type: str, sample_data_root: str | Path) -> RcaRule:
 def load_production_rule(well_type: str, sample_data_root: str | Path) -> ProductionRule:
     manual_path = Path(sample_data_root) / "fleet" / "well-types" / f"{well_type}.md"
     text = manual_path.read_text(encoding="utf-8")
-    match = re.search(
-        r"at least\s+\*\*(?P<value>\d+(?:\.\d+)?)\s*°C\s+above\s+ambient",
-        text,
-        flags=re.IGNORECASE,
+    threshold_patterns = (
+        r"at least\s+\*\*(?P<value>\d+(?:\.\d+)?)\s*°\s*C\s+above\s+ambient",
+        r"exceeds?\s+ambient(?:\s+temperature)?\s+by\s+a\s+minimum\s+of\s+\*\*(?P<value>\d+(?:\.\d+)?)\s*°?\s*C",
+        r"(?:temperature\s+)?(?:delta|difference)\s+of\s+at\s+least\s+\*\*(?P<value>\d+(?:\.\d+)?)\s*°\s*C",
+    )
+    match = next(
+        (found for pattern in threshold_patterns if (found := re.search(pattern, text, flags=re.IGNORECASE))),
+        None,
     )
     if not match:
         raise ValueError(f"Could not read production temperature threshold from {manual_path}")
-    section = "3" if well_type.upper() == "T350" else "9.3"
+    headings = list(
+        re.finditer(r"^#{1,6}\s+(?:(?:section)\s+)?(?P<section>\d+(?:\.\d+)*)\b[^\r\n]*", text, flags=re.IGNORECASE | re.MULTILINE)
+    )
+    preceding = [heading for heading in headings if heading.start() <= match.start()]
+    section = preceding[-1].group("section") if preceding else None
+    citation = f"{manual_path.relative_to(Path(sample_data_root)).as_posix()}"
+    if section:
+        citation += f"#section {section}"
     return ProductionRule(
         well_type=well_type,
         minimum_delta_c=float(match.group("value")),
-        citation=f"fleet/well-types/{manual_path.name}#section {section}",
+        citation=citation,
     )
 
 

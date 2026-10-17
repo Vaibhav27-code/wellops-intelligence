@@ -122,6 +122,21 @@ def test_manual_thresholds_are_read_from_source(sample_data: Path) -> None:
     assert load_production_rule("T350", sample_data).minimum_delta_c == 20
 
 
+def test_production_threshold_parser_handles_new_manual_wording(tmp_path: Path) -> None:
+    manual_dir = tmp_path / "fleet" / "well-types"
+    manual_dir.mkdir(parents=True)
+    (manual_dir / "T500.md").write_text(
+        "# T500 Manual\n\n## 1. Production threshold\n\n"
+        "A T500 unit is producing when its wellhead exceeds ambient temperature by a minimum of **18°C**.\n",
+        encoding="utf-8",
+    )
+
+    rule = load_production_rule("T500", tmp_path)
+
+    assert rule.minimum_delta_c == 18
+    assert rule.citation.endswith("T500.md#section 1")
+
+
 def test_compliance_deadlines_are_read_from_sops(sample_data: Path) -> None:
     rules = load_compliance_rules(str(sample_data))
     assert rules.inspection_interval_days == 14
