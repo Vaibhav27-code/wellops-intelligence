@@ -48,6 +48,10 @@ git clone https://github.com/FlytBaseAILabs/flytbase-ahc-swe-asset-intelligence-
 python -m backend.app.ingest
 ```
 
+## Model
+
+The default Gemini model is `gemini-3.5-flash-lite`. A model-not-found response is not retried or cached; the request uses deterministic rules and templated wording instead. The application also supports Ollama and the deterministic rules provider.
+
 ## Automated Verification
 
 The test suite validates:

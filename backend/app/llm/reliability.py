@@ -20,6 +20,14 @@ class LLMCallTimeout(TimeoutError):
     pass
 
 
+class LLMModelNotFoundError(RuntimeError):
+    """A configured Gemini model is unavailable to the API key or endpoint."""
+
+    def __init__(self, model: str) -> None:
+        super().__init__(f"Gemini model was not found: {model}")
+        self.model = model
+
+
 def _status_code(error: BaseException) -> int | None:
     candidates = [getattr(error, "status_code", None), getattr(error, "code", None)]
     response = getattr(error, "response", None)
@@ -134,6 +142,12 @@ class ReliableLLMClient(LLMClient):
                 return answer
             except Exception as exc:
                 code = _status_code(exc)
+                if self.provider == "gemini" and code == 404:
+                    logger.warning(
+                        "Configured Gemini model was not found model=%s; skipping retries and using rules fallback",
+                        self.model,
+                    )
+                    raise LLMModelNotFoundError(self.model) from None
                 retryable = code == 429 or (code is not None and 500 <= code < 600)
                 if not retryable or attempt >= self.max_attempts:
                     raise

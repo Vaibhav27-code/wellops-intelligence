@@ -35,11 +35,11 @@ class FakeClient(LLMClient):
 
 
 def test_factory_selects_client_from_provider_environment(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
     gemini = get_llm(cache_path=tmp_path / "gemini.db")
     assert isinstance(gemini.client, GeminiClient)
-    assert gemini.model == "gemini-2.5-flash-lite"
+    assert gemini.model == "gemini-3.5-flash-lite"
 
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("OLLAMA_HOST", "http://ollama.local:11434")
@@ -53,6 +53,11 @@ def test_factory_selects_client_from_provider_environment(monkeypatch, tmp_path:
     rules = get_llm(cache_path=tmp_path / "rules.db")
     assert rules.provider == "rules"
     assert rules.model == "rules-v1"
+
+
+def test_gemini_client_defaults_to_flash_lite_35(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_MODEL", raising=False)
+    assert GeminiClient(api_key="test-key").model == "gemini-3.5-flash-lite"
 
 
 def test_cache_hit_avoids_second_provider_call(tmp_path: Path) -> None:
@@ -161,6 +166,33 @@ def test_total_failure_uses_rules_and_deterministic_template(
     assert result["provider_path"] == "rules"
     assert secret not in caplog.text
     assert "private chat contents" not in caplog.text
+
+
+def test_gemini_model_not_found_skips_retry_cache_and_uses_rules(
+    tmp_path: Path, caplog, monkeypatch
+) -> None:
+    class ModelNotFound(Exception):
+        status_code = 404
+
+    raw = FakeClient(error=ModelNotFound("private request details"))
+    raw.model = "gemini-test-unavailable"
+    client = ReliableLLMClient(raw, cache_path=tmp_path / "llm.db")
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
+    caplog.set_level(logging.WARNING, logger="backend.app.llm.service")
+    caplog.set_level(logging.WARNING, logger="backend.app.llm.reliability")
+
+    def tools(_intent: Intent) -> dict:
+        return {"answer": "WELL-0007 is producing.", "citations": [], "visualization": None}
+
+    service = LLMQuestionService(client)
+    first = service.answer("Is WELL-0007 producing?", tools)
+    second = service.answer("Is WELL-0007 producing?", tools)
+
+    assert first["provider_path"] == second["provider_path"] == "rules"
+    assert first["answer"] == "WELL-0007 is producing."
+    assert raw.calls == 2  # Failed 404 calls are not cached and are never retried.
+    assert "gemini-test-unavailable" in caplog.text
+    assert "private request details" not in caplog.text
 
 
 def test_rules_extractor_handles_official_examples_and_rephrasings() -> None:
