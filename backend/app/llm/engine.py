@@ -399,7 +399,7 @@ class CopilotEngine:
                     "conflict": False,
                 }
 
-        # Q16: Shared shut-in announcement (e.g. Jake Morales: FYI for everyone: WELL-0007 shut in from 17 Oct...)
+        # Record a shared operational notice when the user marks it for everyone.
         if "for everyone" in lower and any(term in lower for term in ("shut in", "shut-in", "workover", "planned downtime")):
             well_match = re.search(r"\bWELL-(\d{4})\b", q, re.I)
             wid = well_match.group(0).upper() if well_match else None
@@ -647,7 +647,7 @@ class CopilotEngine:
         lower = q.lower()
         intent_name = intent.intent if intent else None
 
-        # Q1 / Q15: Single well status right now (e.g. "Is WELL-0001 producing oil right now?")
+        # Single-well status uses the requested asset and the latest inspection.
         well_match = re.search(r"\bWELL-(\d{4})\b", q, re.I)
         if well_match and (intent_name == "well_status" or "producing" in lower or "status" in lower or "inspected" in lower) and "which wells" not in lower and "chart" not in lower:
             wid = well_match.group(0).upper()
@@ -694,7 +694,7 @@ class CopilotEngine:
             conflict_msg = None
 
             if corr:
-                # Q15: Well corrected by Michael Turner
+                # Surface any active correction alongside the current status.
                 ans = (
                     f"**Yes, {wid} is producing oil right now.**\n\n"
                     f"• The {insp_date} reading was corrected from {corr.get('original_value')} °C to **{corr.get('corrected_value')} °C** by **{_user_display_name(corr.get('author'))}** ({corr.get('reason')}).\n"
@@ -836,7 +836,7 @@ class CopilotEngine:
                 "conflict": False,
             }
 
-        # Q3: Line chart of wellhead temperature against air temperature (e.g. WELL-0001 last 13 weeks)
+        # Plot wellhead and ambient readings for the requested inspection window.
         if intent_name == "temperature_trend" or "line chart" in lower or ("temperature against air" in lower) or ("last 13 weeks" in lower and "chart" in lower):
             wid = intent.well_ids[0] if intent and intent.well_ids else (well_match.group(0).upper() if well_match else None)
             if not wid:
@@ -911,7 +911,7 @@ class CopilotEngine:
                 "conflict": False,
             }
 
-        # Q4: How many oil spills has well had in period (e.g. WELL-0001 in last 4 years)
+        # Summarize confirmed spills for the requested asset and period.
         if "how many oil spills" in lower or ("spills has" in lower and "had" in lower):
             wid = intent.well_ids[0] if intent and intent.well_ids else (well_match.group(0).upper() if well_match else None)
             if not wid:

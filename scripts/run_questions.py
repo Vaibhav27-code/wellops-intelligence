@@ -41,7 +41,7 @@ def _markdown(results: list[dict[str, Any]]) -> str:
     for index, result in enumerate(results, 1):
         sections.extend(
             [
-                f"## {index}. {result['question']}",
+                f"## {result.get('scenario_id', index)}. {result['question']}",
                 "",
                 f"- Provider path: `{result.get('provider_path', 'unknown')}`",
                 f"- Visualization: `{(result.get('visualization') or {}).get('type', 'none')}`",
@@ -86,7 +86,7 @@ def run_questions(
             )
             response.raise_for_status()
             payload = response.json()
-            results.append({"question": item["question"], **payload})
+            results.append({"scenario_id": item.get("id"), "question": item["question"], **payload})
     return results
 
 
