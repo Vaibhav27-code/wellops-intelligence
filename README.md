@@ -12,6 +12,10 @@ Question → validated intent (Gemini / Ollama / rules) → parameterized SQLite
 
 LLMs may extract intent/entities and reword completed results. They do not calculate values. The metric tool accepts filters for area, well type, well ID, date range, season, and quarter; metrics include downtime days, spill volume, repair cost, late reports, and containment breaches. Results can be grouped by well, area, month, or well type.
 
+## Multi-user Memory, Corrections, and Feedback
+
+Private chat history and answer feedback are stored with a `user_id` scope. Each assistant answer has helpful / needs-improvement controls and an optional comment. `POST /feedback` records only the user ID, local message ID, rating, and comment; it does not copy the question or answer text. Submitting again for the same user and message updates that feedback entry. Avoid putting sensitive details in comments.
+
 ## Quick Start
 
 ### Backend setup

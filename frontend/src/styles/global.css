@@ -298,6 +298,26 @@ input, textarea, select { font: inherit; }
 .msg-btn--citations:hover { color: var(--c-accent); }
 .msg-btn--correct:hover { color: var(--c-ok); }
 .msg-btn--copy:hover { color: var(--c-accent-h); }
+.msg-btn--feedback:hover { color: var(--c-accent-h); }
+.msg-btn--feedback.is-selected { color: var(--c-accent-h); border-color: var(--c-accent); background: rgba(79,123,232,0.12); }
+.feedback-prompt { color: var(--c-text-muted); font-size: 11px; margin-left: 4px; }
+.feedback-panel {
+  margin-top: 8px; padding: 10px 12px; border: 1px solid var(--c-border);
+  border-radius: var(--radius-sm); background: var(--c-surface2);
+  display: flex; flex-direction: column; gap: 7px;
+}
+.feedback-panel label { font-size: 12px; color: var(--c-text); font-weight: 600; }
+.feedback-panel label span { color: var(--c-text-muted); font-weight: 400; }
+.feedback-panel textarea {
+  resize: vertical; min-height: 48px; width: 100%; box-sizing: border-box;
+  padding: 7px 9px; color: var(--c-text); background: var(--c-bg);
+  border: 1px solid var(--c-border); border-radius: var(--radius-sm); font: inherit; font-size: 12px;
+}
+.feedback-panel textarea:focus { outline: none; border-color: var(--c-accent); }
+.feedback-panel__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.feedback-panel__error { color: var(--c-err); font-size: 12px; margin: 0; }
+.msg-btn--feedback-submit { color: var(--c-accent-h); border: 1px solid var(--c-border); }
+.msg-btn--feedback-submit:disabled { opacity: 0.55; cursor: default; }
 
 /* ── Typing indicator ──────────────────────────────────────────────── */
 .typing-indicator {

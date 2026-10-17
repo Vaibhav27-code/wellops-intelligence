@@ -204,6 +204,7 @@ interface Store {
   // Per-user private chat histories (key = user_id)
   histories: Record<string, ChatMessage[]>;
   addMessage: (userId: string, msg: ChatMessage) => void;
+  updateMessage: (userId: string, messageId: string, updates: Partial<ChatMessage>) => void;
   clearHistory: (userId: string) => void;
 
   // Shared corrections
@@ -230,6 +231,15 @@ export const useStore = create<Store>((set) => ({
       histories: {
         ...s.histories,
         [userId]: [...(s.histories[userId] ?? []), msg],
+      },
+    })),
+  updateMessage: (userId, messageId, updates) =>
+    set((s) => ({
+      histories: {
+        ...s.histories,
+        [userId]: (s.histories[userId] ?? []).map((message) =>
+          message.id === messageId ? { ...message, ...updates } : message
+        ),
       },
     })),
   clearHistory: (userId) =>

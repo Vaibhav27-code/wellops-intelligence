@@ -1,19 +1,25 @@
 import React from 'react';
-import type { ChatMessage } from '../types';
+import type { ChatMessage, FeedbackRating } from '../types';
+import { api } from '../api/client';
 import { VizRenderer } from './viz/VizRenderer';
 import { CitationsDrawer } from './CitationsDrawer';
 import { CorrectionModal } from './CorrectionModal';
 import { useStore } from '../store';
-import { BookOpen, AlertTriangle, Edit3, ChevronDown, ChevronRight, User, Bot, Copy, Check } from 'lucide-react';
+import { BookOpen, AlertTriangle, Edit3, ChevronDown, ChevronRight, User, Bot, Copy, Check, ThumbsUp, ThumbsDown, Send, Loader2, X } from 'lucide-react';
 
 interface MessageBubbleProps {
   message: ChatMessage;
 }
 
 export function MessageBubble({ message }: MessageBubbleProps) {
-  const { currentUser, histories, activeCitationMsgId, setActiveCitationMsgId } = useStore();
+  const { currentUser, histories, activeCitationMsgId, setActiveCitationMsgId, updateMessage } = useStore();
   const [showCorrection, setShowCorrection] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+  const [feedbackRating, setFeedbackRating] = React.useState<FeedbackRating | null>(message.feedback?.rating ?? null);
+  const [feedbackComment, setFeedbackComment] = React.useState(message.feedback?.comment ?? '');
+  const [showFeedback, setShowFeedback] = React.useState(false);
+  const [feedbackSubmitting, setFeedbackSubmitting] = React.useState(false);
+  const [feedbackError, setFeedbackError] = React.useState<string | null>(null);
 
   const messages = histories[currentUser.user_id] ?? [];
   const isUser = message.role === 'user';
@@ -103,6 +109,43 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       setTimeout(() => setCopied(false), 2000);
     } catch (e) {
       console.warn('Clipboard write failed:', e);
+    }
+  };
+
+  const openFeedback = (rating: FeedbackRating) => {
+    setFeedbackRating(rating);
+    setFeedbackError(null);
+    setShowFeedback(true);
+  };
+
+  const cancelFeedback = () => {
+    setFeedbackRating(message.feedback?.rating ?? null);
+    setFeedbackComment(message.feedback?.comment ?? '');
+    setFeedbackError(null);
+    setShowFeedback(false);
+  };
+
+  const submitFeedback = async () => {
+    if (!feedbackRating || feedbackSubmitting) return;
+    setFeedbackSubmitting(true);
+    setFeedbackError(null);
+    const comment = feedbackComment.trim();
+    try {
+      await api.postFeedback({
+        user_id: currentUser.user_id,
+        message_id: message.id,
+        rating: feedbackRating,
+        comment: comment || null,
+      });
+      updateMessage(currentUser.user_id, message.id, {
+        feedback: { rating: feedbackRating, ...(comment ? { comment } : {}) },
+      });
+      setFeedbackComment(comment);
+      setShowFeedback(false);
+    } catch (err) {
+      setFeedbackError(err instanceof Error ? err.message : 'Feedback could not be saved.');
+    } finally {
+      setFeedbackSubmitting(false);
     }
   };
 
@@ -254,6 +297,32 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           )}
 
           {!isUser && (
+            <>
+              <span className="feedback-prompt" aria-live="polite">
+                {message.feedback ? 'Feedback saved' : 'Helpful?'}
+              </span>
+              <button
+                className={`msg-btn msg-btn--feedback ${feedbackRating === 'positive' ? 'is-selected' : ''}`}
+                onClick={() => openFeedback('positive')}
+                aria-label="Rate this answer helpful"
+                aria-pressed={feedbackRating === 'positive'}
+                title="This answer was helpful"
+              >
+                <ThumbsUp size={12} /> Yes
+              </button>
+              <button
+                className={`msg-btn msg-btn--feedback ${feedbackRating === 'negative' ? 'is-selected' : ''}`}
+                onClick={() => openFeedback('negative')}
+                aria-label="Rate this answer as needing improvement"
+                aria-pressed={feedbackRating === 'negative'}
+                title="This answer needs improvement"
+              >
+                <ThumbsDown size={12} /> No
+              </button>
+            </>
+          )}
+
+          {!isUser && (
             <button
               className="msg-btn msg-btn--correct"
               onClick={() => setShowCorrection(true)}
@@ -264,6 +333,42 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             </button>
           )}
         </div>
+
+        {!isUser && showFeedback && (
+          <div className="feedback-panel">
+            <label htmlFor={`feedback-comment-${message.id}`}>
+              {feedbackRating === 'positive' ? 'What worked well?' : 'What should be improved?'}
+              <span> Optional</span>
+            </label>
+            <textarea
+              id={`feedback-comment-${message.id}`}
+              value={feedbackComment}
+              onChange={(event) => setFeedbackComment(event.target.value)}
+              maxLength={2000}
+              rows={2}
+              placeholder="Share a short note; avoid sensitive information."
+              disabled={feedbackSubmitting}
+            />
+            {feedbackError && <p className="feedback-panel__error" role="alert">{feedbackError}</p>}
+            <div className="feedback-panel__actions">
+              <button
+                className="msg-btn"
+                onClick={cancelFeedback}
+                disabled={feedbackSubmitting}
+              >
+                <X size={12} /> Cancel
+              </button>
+              <button
+                className="msg-btn msg-btn--feedback-submit"
+                onClick={submitFeedback}
+                disabled={feedbackSubmitting || !feedbackRating}
+              >
+                {feedbackSubmitting ? <Loader2 size={12} className="spin" /> : <Send size={12} />}
+                {feedbackSubmitting ? 'Saving…' : 'Send feedback'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Citations drawer (inline below message) */}
         {citationsOpen && hasCitations && (

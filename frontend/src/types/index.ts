@@ -95,6 +95,14 @@ export interface ChatMessage {
   conflict_message?: string;
   calculation_explanation?: string;
   data_as_of?: string;
+  feedback?: AnswerFeedback;
+}
+
+export type FeedbackRating = 'positive' | 'negative';
+
+export interface AnswerFeedback {
+  rating: FeedbackRating;
+  comment?: string;
 }
 
 // ─── Users & Memory ───────────────────────────────────────────────────────────
@@ -141,4 +149,11 @@ export interface ChatResponse {
   calculation_explanation?: string;
   data_as_of?: string;
   intent?: Record<string, unknown>;
+}
+
+export interface FeedbackRequest {
+  user_id: string;
+  message_id: string;
+  rating: FeedbackRating;
+  comment?: string | null;
 }
