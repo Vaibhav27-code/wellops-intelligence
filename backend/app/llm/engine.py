@@ -819,7 +819,6 @@ class CopilotEngine:
                 "conflict_message": conflict_msg,
             }
 
-        # Q2: Which wells in an area are not producing oil right now, and why? Show them in a table.
         if "not producing" in lower and ("area" in lower or "block" in lower or "which wells" in lower):
             area_name = intent.area_name if intent and intent.area_name else None
             wells = search_wells(area_name=area_name)
@@ -1226,7 +1225,6 @@ class CopilotEngine:
 
             return _compliance_answer(well_match.group(0).upper(), self.as_of)
 
-        # Q10: Spills not contained within SOP limit in area
         if intent_name == "containment_breach" or "not contained" in lower or ("contained" in lower and "limit" in lower):
             area_name = intent.area_name if intent and intent.area_name else None
             breach_query = query_metric(
@@ -1295,7 +1293,6 @@ class CopilotEngine:
                 "conflict": False,
             }
 
-        # Q14: Pump jack RCA wells in area
         if intent_name == "rca" or "root-cause" in lower or "rca" in lower:
             area_name = intent.area_name if intent and intent.area_name else None
             wells_rca = find_maintenance_patterns(
@@ -1343,7 +1340,6 @@ class CopilotEngine:
                 "conflict": False,
             }
 
-        # Q15: Which spills in area in last 90 days needed a report to the regulator?
         if "needed a report" in lower or "reportable" in lower:
             area_name = intent.area_name if intent and intent.area_name else None
             start_date, end_date = _intent_period(intent, self.as_of, "last 90 days")
