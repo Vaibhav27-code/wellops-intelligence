@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AppUser, ChatMessage, Correction } from '../types';
+import type { AppUser, ChatMessage, Correction } from '../types';
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
