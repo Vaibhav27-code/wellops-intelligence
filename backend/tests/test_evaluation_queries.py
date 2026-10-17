@@ -287,6 +287,19 @@ def test_q13_spill_volume_correction():
     assert "SR-01" in data["answer"]
     assert "5.4" in data["answer"]
 
+    # The corrected measurement must flow into later deterministic spill queries.
+    from backend.app.tools.spills import get_all_real_spills
+
+    corrected = get_all_real_spills(
+        well_id="WELL-0151",
+        start_date="2026-09-24",
+        end_date="2026-09-24",
+        as_of="2026-10-15",
+    )
+    assert len(corrected) == 1
+    assert corrected[0]["volume_bbl"] == 5.4
+    assert corrected[0]["external_report_required"] is True
+
 
 def test_q14_team_rule_override():
     # Initial query

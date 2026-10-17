@@ -67,12 +67,12 @@ def get_all_real_spills(
             # Apply volume correction if exists
             if iid in corr_by_target and corr_by_target[iid].get("field") == "spill_volume_bbl":
                 c = corr_by_target[iid]
-                insp_copy["spill_volume_bbl"] = float(c["corrected_value"])
+                insp_copy["spill_est_volume_bbl"] = float(c["corrected_value"])
                 insp_copy["_corrected_by"] = c.get("author")
             elif wid in corr_by_well:
                 # Well-level correction
                 c = corr_by_well[wid]
-                insp_copy["spill_volume_bbl"] = float(c["corrected_value"])
+                insp_copy["spill_est_volume_bbl"] = float(c["corrected_value"])
                 insp_copy["_corrected_by"] = c.get("author")
 
             spill = assess_spill(insp_copy, contexts, rules, as_of=as_of)
