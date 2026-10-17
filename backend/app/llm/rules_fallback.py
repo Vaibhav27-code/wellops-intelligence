@@ -62,7 +62,7 @@ _EXPLICIT_RANGE_RE = re.compile(
 )
 _DATE_RE = re.compile(
     r"\b(?:last|past|previous|this|during|in|since|from)\s+(?:the\s+)?(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen)\s+(?:days?|weeks?|months?|years?)\b|"
-    r"\b(?:last|past|previous|this|during|in|since|from)\s+(?:the\s+)?(?:\d{4}|spring|summer|autumn|fall|winter|(?:first|second|third|fourth|[1-4](?:st|nd|rd|th)?)\s+quarter)\b",
+    r"\b(?:last|past|previous|this|during|in|since|from)\s+(?:the\s+)?(?:\d{4}|year|spring|summer|autumn|fall|winter|(?:first|second|third|fourth|[1-4](?:st|nd|rd|th)?)\s+quarter|(?:last|previous|this|current)\s+quarter|quarter)\b",
     re.IGNORECASE,
 )
 
@@ -118,8 +118,9 @@ def extract_intent(question: str) -> Intent:
     keyword_rules = {
         "downtime": r"\b(down|downtime|offline|shut[- ]*in)\b",
         "spill": r"\b(spills?|crude|releases?|barrels?|bbl)\b",
-        "repair_cost": r"\b(repair|repairs|maintenance)\b.{0,35}\b(cost|costs|spent|price|expense)\b|\b(cost|costs|spent|price|expense)\b.{0,35}\b(repair|repairs|maintenance)\b",
+        "repair_cost": r"\b(repair|repairs|maintenance|work orders?)\b.{0,35}\b(cost|costs|spent|price|expense|expensive|priciest|costly)\b|\b(cost|costs|spent|price|expense|expensive|priciest|costly)\b.{0,35}\b(repair|repairs|maintenance|work orders?)\b",
         "sop": r"\b(sop|procedure|protocol|manual|limit|deadline)\b",
+        "late_reports": r"\b(late|overdue|missed|unfiled|after the deadline|past the deadline)\b.{0,25}\b(reports?|filings?|notices?)\b|\b(reports?|filings?|notices?)\b.{0,25}\b(late|overdue|missed|unfiled|after the deadline|past the deadline)\b",
         "correction": r"\b(correct|correction|wrong|faulty|re-measured|remeasured|measured)\b",
         "memory": r"\b(remember|discussed|yesterday|previous (?:conversation|chat)|last (?:conversation|chat)|history)\b",
     }
@@ -128,7 +129,7 @@ def extract_intent(question: str) -> Intent:
     metric = None
     if re.search(r"\b(containment|contained)\b", text) and re.search(r"\b(breach|breaches|limit|sop|time)\b", text):
         metric = "containment_breaches"
-    elif re.search(r"\b(late|overdue|missed|unfiled)\b.{0,25}\breports?\b|\breports?\b.{0,25}\b(late|overdue|missed|unfiled)\b", text):
+    elif "late_reports" in keywords:
         metric = "late_reports"
     elif "repair_cost" in keywords:
         metric = "repair_cost"
@@ -157,6 +158,8 @@ def extract_intent(question: str) -> Intent:
         intent = "shared_memory"
     elif private_memory:
         intent = "private_memory"
+    elif metric == "late_reports":
+        intent = "compliance"
     elif re.search(r"\b(contain|contained|containment)\b", text) and re.search(r"\b(spills?|releases?)\b", text):
         intent = "containment_breach"
     elif re.search(r"\b(compliance|violation|violations|breach|breaches|broken|rules has|rules did|still open)\b", text):

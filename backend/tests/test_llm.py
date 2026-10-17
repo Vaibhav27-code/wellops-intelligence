@@ -248,6 +248,42 @@ def test_rules_extract_general_metric_filters_and_grouping() -> None:
     assert containment.season == "summer"
 
 
+@pytest.mark.parametrize(
+    ("question", "metric", "date_phrase", "intent_name"),
+    [
+        (
+            "Which assets stayed offline the longest in Southwest Block 23 over the past 45 days?",
+            "downtime_days",
+            "past 45 days",
+            "downtime",
+        ),
+        (
+            "Show late regulator filings for T200 wells during last quarter.",
+            "late_reports",
+            "during last quarter",
+            "compliance",
+        ),
+        (
+            "Which sites had the most expensive repairs in Northeast Block 7 this year?",
+            "repair_cost",
+            "this year",
+            "repair_cost",
+        ),
+        (
+            "List filings submitted after the deadline in Southwest Block 24 in the previous 90 days.",
+            "late_reports",
+            "previous 90 days",
+            "compliance",
+        ),
+    ],
+)
+def test_rules_extracts_alternative_metric_phrasings(question, metric, date_phrase, intent_name) -> None:
+    intent = extract_intent(question)
+    assert intent.metric == metric
+    assert intent.date_phrase == date_phrase
+    assert intent.intent == intent_name
+
+
 def test_valid_intent_then_answer_wording_uses_two_generation_calls(tmp_path: Path) -> None:
     intent_json = Intent(intent="well_status", well_ids=["WELL-0001"]).model_dump_json()
     raw = FakeClient(responses=[intent_json, "WELL-0001 is not producing."])
