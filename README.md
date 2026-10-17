@@ -2,6 +2,11 @@
 
 Evidence-grounded operations support for the fictional FlytBase oil-well fleet. The backend ingests structured records and manuals into SQLite + FTS5, calculates fleet metrics deterministically, and returns cited answers with a visualization specification. A React + Vite frontend renders cards, tables, charts, maps, and heatmaps.
 
+> 🎬 **5-Minute Narrated Demo Video:** [`docs/demo_5min_narrated.webm`](docs/demo_5min_narrated.webm) *(Opus Audio + VP9 Video)*  
+> 📄 **Evaluation Report (PDF):** [`docs/report.pdf`](docs/report.pdf) \| **2-Page System Design Writeup (PDF):** [`docs/writeup.pdf`](docs/writeup.pdf)  
+> 📊 **Final Evaluation Results:** [`results_final.md`](results_final.md) *(All 21 question turns verified across 600 wells)*
+
+
 ## Architecture
 
 ```text
