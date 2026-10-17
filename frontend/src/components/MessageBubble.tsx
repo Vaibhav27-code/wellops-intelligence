@@ -11,6 +11,27 @@ interface MessageBubbleProps {
   message: ChatMessage;
 }
 
+function renderInlineFormatting(text: string): React.ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={index}>{part.slice(1, -1)}</code>;
+    }
+    return <React.Fragment key={index}>{part}</React.Fragment>;
+  });
+}
+
+function renderMessageText(text: string): React.ReactNode {
+  return text.split('\n').map((line, index, lines) => (
+    <React.Fragment key={index}>
+      {line ? renderInlineFormatting(line) : <br />}
+      {index < lines.length - 1 && line ? <br /> : null}
+    </React.Fragment>
+  ));
+}
+
 export function MessageBubble({ message }: MessageBubbleProps) {
   const { currentUser, histories, activeCitationMsgId, setActiveCitationMsgId, updateMessage } = useStore();
   const [showCorrection, setShowCorrection] = React.useState(false);
@@ -233,7 +254,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
         {/* Text content */}
         <div className="message-bubble__text" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-          {message.content}
+          {renderMessageText(message.content)}
         </div>
 
         {/* Calculation explanation */}

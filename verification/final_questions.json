@@ -1,0 +1,130 @@
+{
+  "questions": [
+    {
+      "id": "Q1",
+      "user_id": "U-201",
+      "session_id": "s-q1",
+      "question": "All our wells feed one reservoir. Map the reservoir pressure across the field from the pressure data."
+    },
+    {
+      "id": "Q2",
+      "user_id": "U-301",
+      "session_id": "s-q2",
+      "question": "Which well produced the most oil in 2026?"
+    },
+    {
+      "id": "Q3",
+      "user_id": "U-401",
+      "session_id": "s-q3",
+      "question": "Since 1 Nov 2026, every time an operator note reports gas at a well, did we get someone out to that well in time under our operating procedures? List every report and whether the response met the deadline."
+    },
+    {
+      "id": "Q4",
+      "user_id": "U-402",
+      "session_id": "s-q4",
+      "question": "Across all areas, which temporary flowline bypasses are in place right now, and is each one allowed? Also list any bypass, past or present, that stayed in after its approval ran out or was never approved at all."
+    },
+    {
+      "id": "Q5",
+      "user_id": "U-201",
+      "session_id": "s-q5",
+      "question": "The State Oil & Gas Commission wrote to us in November 2026 about spills. Which of our spills does the letter cover, and on which ones are we not compliant? Show me a table."
+    },
+    {
+      "id": "Q6",
+      "user_id": "U-601",
+      "session_id": "s-q6",
+      "question": "Across the whole field, not just my area, for which wells do the latest inspection and the operator notes disagree about whether the well is producing oil? For each one, what is its real status right now, and why?"
+    },
+    {
+      "id": "Q7.1",
+      "user_id": "U-301",
+      "session_id": "s-q7-robert",
+      "question": "Over the last month the operators have written notes about wells that sound or behave wrong. Which of those wells haven't had a repair since? Rank the 10 most likely to need a repair in the next 90 days, other than a spill clean-up, and quote the notes as evidence."
+    },
+    {
+      "id": "Q7.2",
+      "user_id": "U-301",
+      "session_id": "s-q7-robert",
+      "question": "Which three would you send a crew to first this week, and why?"
+    },
+    {
+      "id": "Q8.1",
+      "user_id": "U-601",
+      "session_id": "s-q8-nathan-1",
+      "question": "WELL-0333's recalled pump was swapped out yesterday. The work order isn't in the system yet. Please count it as replaced from now on."
+    },
+    {
+      "id": "Q8.2",
+      "user_id": "U-601",
+      "session_id": "s-q8-nathan-1",
+      "question": "Also, just for me: whenever you list wells, sort them by area and then by well ID, and show costs in thousands of dollars."
+    },
+    {
+      "id": "Q8.3",
+      "user_id": "U-301",
+      "session_id": "s-q8-robert",
+      "question": "Which recalled pumps are still in the ground right now?"
+    },
+    {
+      "id": "Q8.4",
+      "user_id": "U-501",
+      "session_id": "s-q8-olivia",
+      "question": "Nathan told me the recalled pump on WELL-0577 was swapped as well. Take it off the recall list."
+    },
+    {
+      "id": "Q8.5",
+      "user_id": "U-601",
+      "session_id": "s-q8-nathan-2",
+      "question": "Show me the recalled pumps that are still in the ground in my area, and what it cost to install each one."
+    },
+    {
+      "id": "Q9.1",
+      "user_id": "U-301",
+      "session_id": "s-q9-robert",
+      "question": "How many recalled pumps are still in the ground, and in which areas?"
+    },
+    {
+      "id": "Q9.2",
+      "user_id": "U-301",
+      "session_id": "s-q9-robert",
+      "question": "Different topic. Who leads Northwest Production, and how many wells does that team run?"
+    },
+    {
+      "id": "Q9.3",
+      "user_id": "U-301",
+      "session_id": "s-q9-robert",
+      "question": "What does our operations SOP say about cold weather? Name one well that missed the check in December."
+    },
+    {
+      "id": "Q9.4",
+      "user_id": "U-301",
+      "session_id": "s-q9-robert",
+      "question": "An operator reported a gas smell at WELL-0332 on 3 Dec. What was the H2S reading?"
+    },
+    {
+      "id": "Q9.5",
+      "user_id": "U-301",
+      "session_id": "s-q9-robert",
+      "question": "Back to the pumps from my first question: which of those wells are not producing oil right now, and when was each one last repaired?"
+    },
+    {
+      "id": "Q9.6",
+      "user_id": "U-301",
+      "session_id": "s-q9-robert",
+      "question": "Of all the wells we've talked about today, which one would you deal with first, and why?"
+    },
+    {
+      "id": "Q10",
+      "user_id": "U-201",
+      "session_id": "s-q10",
+      "question": "When a well stays shut in longer than the repair itself, what are we usually waiting on: parts, crews, contractors or weather? Break it down by area for jobs started in 2026, with the typical number of extra days, and tell me if any area stands out."
+    },
+    {
+      "id": "Q11",
+      "user_id": "U-501",
+      "session_id": "s-q11",
+      "question": "Which region of the field consistently runs hotter?"
+    }
+  ]
+}

@@ -277,22 +277,24 @@ async function runFiveMinuteFlow(page) {
     (answer) => /Southwest Block 23/i.test(answer) && /not producing oil/i.test(answer),
   );
   await latest.locator('.data-table-wrapper, .data-table').first().waitFor({ state: 'visible', timeout: 15000 });
+  await latest.scrollIntoViewIfNeeded();
+  await screenshot(page, 'final_07_area_status_table.png');
   await latest.locator('.msg-btn--citations').click();
   await latest.locator('.citations-drawer').waitFor({ state: 'visible', timeout: 10000 });
   await latest.locator('.citations-drawer').scrollIntoViewIfNeeded();
-  await screenshot(page, 'final_07_area_status_table.png');
+  await screenshot(page, 'final_07b_area_citations.png');
   await finishFinalBeat('Southwest Block 23 status table', 25, areaStarted);
 
   const firstTriageStarted = Date.now();
   await showTriageRows(page, 0, 6);
   await screenshot(page, 'final_08_triage_q1_q6.png');
-  await finishFinalBeat('Triage for questions 1 through 6', 35, firstTriageStarted);
+  await finishFinalBeat('Triage for questions 1 through 6', 30, firstTriageStarted);
 
   const secondTriageStarted = Date.now();
   await showTriageRows(page, 6, 11);
   await screenshot(page, 'final_09_triage_q7_q11.png');
-  await finishFinalBeat('Triage for questions 7 through 11', 35, secondTriageStarted);
-  console.log(`Query and scenario segment: ${(Date.now() - queryStarted) / 1000}s (target 115s).`);
+  await finishFinalBeat('Triage for questions 7 through 11', 30, secondTriageStarted);
+  console.log(`Query and scenario segment: ${(Date.now() - queryStarted) / 1000}s (target 85s).`);
 }
 
 async function saveRecording(page, context, browser) {
