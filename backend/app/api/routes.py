@@ -14,11 +14,27 @@ from backend.app.memory.store import (
     retrieve_private_memory,
     retrieve_shared_memory,
 )
-from backend.app.tools.db import get_db_path
+from backend.app.tools.db import get_db_path, query_records
 from backend.app.tools.wells import get_well_details, search_wells
 
 router = APIRouter()
 engine = CopilotEngine()
+
+
+@router.get("/users")
+def api_get_users() -> dict[str, Any]:
+    rows = query_records("user")
+    users = [
+        {
+            "user_id": str(r.get("user_id")),
+            "name": str(r.get("name", r.get("user_id"))),
+            "role": str(r.get("role", "operator")),
+            "team_id": r.get("team_id"),
+        }
+        for r in rows
+    ]
+    return {"users": users}
+
 
 
 class ChatRequestModel(BaseModel):

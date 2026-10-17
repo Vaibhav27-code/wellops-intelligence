@@ -9,7 +9,7 @@ from backend.app.memory.store import (
     open_memory,
     retrieve_shared_memory,
 )
-from backend.app.tools.db import get_db_path, get_sample_data_root, query_records
+from backend.app.tools.db import get_db_path, get_reference_date, get_sample_data_root, query_records
 
 
 def search_wells(
@@ -43,8 +43,15 @@ def search_wells(
     return results
 
 
-def get_latest_inspection(well_id: str, well: dict[str, Any] | None = None) -> dict[str, Any] | None:
-    inspections = query_records("inspection", asset_id=well_id, order_by_event=True, descending=True, limit=1)
+def get_latest_inspection(
+    well_id: str,
+    well: dict[str, Any] | None = None,
+    *,
+    as_of: str | None = None,
+) -> dict[str, Any] | None:
+    cutoff = (as_of or get_reference_date())[:10]
+    inspections = query_records("inspection", asset_id=well_id, order_by_event=True, descending=True)
+    inspections = [row for row in inspections if str(row.get("inspected_at", ""))[:10] <= cutoff]
     if not inspections:
         return None
     insp = dict(inspections[0])
@@ -65,7 +72,7 @@ def get_latest_inspection(well_id: str, well: dict[str, Any] | None = None) -> d
     return corrected_insp
 
 
-def get_well_details(well_id: str, as_of: str = "2026-10-16") -> dict[str, Any] | None:
+def get_well_details(well_id: str, as_of: str | None = None) -> dict[str, Any] | None:
     wells = query_records("well", record_id=well_id)
     if not wells:
         wells = query_records("well", asset_id=well_id)
@@ -77,7 +84,8 @@ def get_well_details(well_id: str, as_of: str = "2026-10-16") -> dict[str, Any] 
     sample_root = get_sample_data_root()
     rule = load_production_rule(well_type, sample_root)
 
-    latest_insp = get_latest_inspection(well_id, well=well)
+    reference_date = (as_of or get_reference_date())[:10]
+    latest_insp = get_latest_inspection(well_id, well=well, as_of=reference_date)
     well["latest_inspection"] = latest_insp
 
     if latest_insp:

@@ -1,31 +1,16 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from backend.app.calc.downtime import calculate_downtime
 from backend.app.memory.store import apply_corrections_to_inspection, open_memory, retrieve_shared_memory
-from backend.app.tools.db import get_db_path, get_sample_data_root, query_records
+from backend.app.tools.db import get_db_path, get_reference_date, get_sample_data_root, query_records
+from backend.app.tools.time_ranges import resolve_date_range
 
 
-def _parse_relative_period(period_desc: str, as_of: str = "2026-10-16") -> tuple[str, str]:
-    as_of_date = date.fromisoformat(as_of)
-    desc = period_desc.lower()
-    if "last 4 months" in desc or "past 4 months" in desc or "4 months" in desc:
-        # 16 Jun 2026 to 16 Oct 2026
-        return "2026-06-16", as_of
-    if "last 13 weeks" in desc or "past 13 weeks" in desc or "13 weeks" in desc:
-        return "2026-07-23", as_of
-    if "last 12 months" in desc or "past 12 months" in desc or "12 months" in desc or "last year" in desc:
-        return "2025-10-16", as_of
-    if "last 90 days" in desc or "past 90 days" in desc or "90 days" in desc:
-        start = (as_of_date - timedelta(days=90)).isoformat()
-        return start, as_of
-    if "2025" in desc:
-        return "2025-01-01", "2025-12-31"
-    if "2026" in desc:
-        return "2026-01-01", as_of
-    return "2026-01-01", as_of
+def _parse_relative_period(period_desc: str, as_of: str | None = None) -> tuple[str | None, str]:
+    reference_date = as_of or get_reference_date()
+    return resolve_date_range(reference_date=reference_date, date_phrase=period_desc)
 
 
 def get_well_downtime(
@@ -33,8 +18,9 @@ def get_well_downtime(
     *,
     start: str | None = None,
     end: str | None = None,
-    as_of: str = "2026-10-16",
+    as_of: str | None = None,
 ) -> dict[str, Any]:
+    as_of = as_of or get_reference_date()
     wells = query_records("well", record_id=well_id)
     if not wells:
         wells = query_records("well", asset_id=well_id)
@@ -77,9 +63,13 @@ def get_well_downtime(
 def get_top_downtime_wells_in_area(
     area_name: str,
     top_n: int = 3,
-    start: str = "2026-06-16",
-    end: str = "2026-10-16",
+    start: str | None = None,
+    end: str | None = None,
 ) -> list[dict[str, Any]]:
+    reference_date = end or get_reference_date()
+    if start is None:
+        start, _ = resolve_date_range(reference_date=reference_date, date_phrase="last 4 months")
+    end = reference_date
     areas = query_records("area")
     target_area = None
     for a in areas:

@@ -9,10 +9,10 @@ from backend.app.calc.rules import assess_spill, load_production_rule, load_rca_
 from backend.app.ingest.loader import _resolve_report_file
 from backend.app.memory.store import apply_corrections_to_inspection, open_memory, retrieve_shared_memory
 from backend.app.tools import data_tools
-from backend.app.tools.db import get_db_path, get_sample_data_root, query_records
+from backend.app.tools.db import get_db_path, get_reference_date, get_sample_data_root, query_records
+from backend.app.tools.time_ranges import resolve_date_range
+from backend.app.llm.rules_fallback import extract_intent
 
-
-AS_OF = "2026-10-16"
 _WELL_ID = re.compile(r"\bWELL-\d{4}\b", re.IGNORECASE)
 
 
@@ -34,29 +34,18 @@ def _area(question: str) -> dict[str, Any] | None:
 
 
 def _reference_date() -> str:
-    return data_tools._reference_date(get_sample_data_root())
+    return get_reference_date()
 
 
 def _period(question: str, as_of: str) -> tuple[str | None, str]:
-    cutoff = date.fromisoformat(as_of)
-    text = question.casefold()
-    if "13 week" in text:
-        return (cutoff - timedelta(days=85)).isoformat(), as_of
-    if "4 month" in text:
-        return (cutoff - timedelta(days=122)).isoformat(), as_of
-    if "90 day" in text or "three month" in text:
-        return (cutoff - timedelta(days=90)).isoformat(), as_of
-    if "12 month" in text or "last year" in text or "past year" in text:
-        try:
-            start = cutoff.replace(year=cutoff.year - 1)
-        except ValueError:
-            start = cutoff.replace(year=cutoff.year - 1, day=28)
-        return start.isoformat(), as_of
-    year = re.search(r"\b(20\d{2})\b", text)
-    if year:
-        year_value = int(year.group(1))
-        return f"{year_value}-01-01", min(as_of, f"{year_value}-12-31")
-    return None, as_of
+    intent = extract_intent(question)
+    return resolve_date_range(
+        reference_date=as_of,
+        date_phrase=intent.date_phrase or question,
+        season=intent.season,
+        quarter=intent.quarter,
+        year=intent.year,
+    )
 
 
 def _date_in_range(value: Any, start: str | None, end: str | None) -> bool:
@@ -168,8 +157,9 @@ def _get_spills(
     area_id: str | None = None,
     start: str | None = None,
     end: str | None = None,
-    as_of: str = AS_OF,
+    as_of: str | None = None,
 ) -> list[dict[str, Any]]:
+    as_of = as_of or _reference_date()
     wells = _well_records()
     if well_id:
         wells = [well for well in wells if well.get("asset_id") == well_id]

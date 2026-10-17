@@ -4,7 +4,6 @@ import json
 import re
 import sqlite3
 from contextlib import contextmanager
-from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -19,6 +18,7 @@ from backend.app.memory.store import (
     rca_threshold_override,
     retrieve_shared_memory,
 )
+from backend.app.tools.db import get_reference_date
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -72,14 +72,10 @@ def _records(
     return [_row_dict(row) for row in rows]
 
 
-def _reference_date(sample_data_root: str | Path) -> str:
-    root = Path(sample_data_root)
-    guide = root.parent / "02-dataset-guide.md"
-    if guide.is_file():
-        match = re.search(r"Treat\s+\*\*(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})\*\*\s+as", guide.read_text(encoding="utf-8"), re.IGNORECASE)
-        if match:
-            return datetime.strptime(match.group(1), "%d %b %Y").date().isoformat()
-    return date.today().isoformat()
+def _reference_date(sample_data_root: str | Path | None = None, database_path: str | Path = DEFAULT_DATABASE) -> str:
+    """Compatibility wrapper; reference dates come from the DB or REFERENCE_DATE."""
+    del sample_data_root
+    return get_reference_date(database_path)
 
 
 @contextmanager
@@ -122,7 +118,7 @@ def get_well_details(
     database_path: str | Path = DEFAULT_DATABASE,
     as_of: str | None = None,
 ) -> dict[str, Any]:
-    reference_date = (as_of or _reference_date(dataset_root))[:10]
+    reference_date = (as_of or get_reference_date(database_path))[:10]
     with _connection(database_path) as connection:
         well_row = connection.execute(
             "SELECT * FROM records WHERE entity_type = 'well' AND record_id = ?", (asset_id,)
@@ -244,7 +240,7 @@ def downtime_for_well(
         contexts=contexts,
         start=start,
         end=end,
-        as_of=as_of or _reference_date(dataset_root),
+        as_of=as_of or get_reference_date(database_path),
     )
 
 

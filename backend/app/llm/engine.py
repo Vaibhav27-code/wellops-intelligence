@@ -17,7 +17,7 @@ from backend.app.memory.store import (
     retrieve_private_memory,
     retrieve_shared_memory,
 )
-from backend.app.tools.db import get_db_path, get_sample_data_root, query_records
+from backend.app.tools.db import get_db_path, get_reference_date, get_sample_data_root, query_records
 from backend.app.tools.downtime import get_top_downtime_wells_in_area, get_well_downtime
 from backend.app.tools.repairs import (
     get_containment_breaches_in_area,
@@ -34,9 +34,13 @@ from backend.app.tools.wells import get_latest_inspection, get_well_details, sea
 
 
 class CopilotEngine:
-    def __init__(self, as_of: str = "2026-10-16"):
-        self.as_of = as_of
+    def __init__(self, as_of: str | None = None):
+        self._as_of = as_of
         self.sample_root = get_sample_data_root()
+
+    @property
+    def as_of(self) -> str:
+        return self._as_of or get_reference_date()
 
     def process_query(
         self,

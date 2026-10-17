@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any
 
 from backend.app.memory.store import open_memory, rca_threshold_override, retrieve_shared_memory
-from backend.app.tools.db import get_connection, get_db_path, query_records
+from backend.app.calc.compliance import load_compliance_rules
+from backend.app.calc.rules import load_rca_rule
+from backend.app.tools.db import get_connection, get_db_path, get_reference_date, get_sample_data_root, query_records
+from backend.app.tools.time_ranges import _subtract_months
 
 
-def get_well_repairs_cost(well_id: str, year: int = 2026) -> dict[str, Any]:
+def get_well_repairs_cost(well_id: str, year: int | None = None) -> dict[str, Any]:
+    year = year or int(get_reference_date()[:4])
     repairs = query_records("maintenance", asset_id=well_id)
     year_str = str(year)
     matching = [
@@ -31,21 +35,20 @@ def get_well_repairs_cost(well_id: str, year: int = 2026) -> dict[str, Any]:
 
 
 def get_pump_jack_rca_wells(
-    area_name: str = "Northeast Block 7",
-    as_of: str = "2026-10-16",
+    area_name: str | None = None,
+    as_of: str | None = None,
 ) -> list[dict[str, Any]]:
+    as_of = as_of or get_reference_date()
     # Map area name to area_id
     areas = query_records("area")
-    target_area = next((a for a in areas if a.get("name", "").lower() == area_name.lower()), None)
-    if not target_area:
+    target_area = next((a for a in areas if area_name and a.get("name", "").casefold() == area_name.casefold()), None)
+    if area_name and not target_area:
         return []
-
-    area_id = target_area.get("area_id")
+    area_id = target_area.get("area_id") if target_area else None
     wells = query_records("well")
-    area_wells = [w for w in wells if w.get("area_id") == area_id]
+    area_wells = [w for w in wells if area_id is None or w.get("area_id") == area_id]
 
     as_of_date = date.fromisoformat(as_of)
-    one_year_ago = (as_of_date - timedelta(days=365)).isoformat()
 
     # Load active shared memory / corrections
     mem_conn = open_memory(get_db_path())
@@ -59,6 +62,8 @@ def get_pump_jack_rca_wells(
     for w in area_wells:
         wid = w.get("asset_id")
         wtype = w.get("well_type", "T200")
+        rule = load_rca_rule(str(wtype), get_sample_data_root())
+        window_start = _subtract_months(as_of_date, rule.window_months).isoformat()
 
         # Check for threshold override
         override = rca_threshold_override(w, "pump_jack", corrections)
@@ -67,16 +72,16 @@ def get_pump_jack_rca_wells(
             is_custom = True
             rule_desc = f"{override.get('author')}'s rule: {override.get('reason')}"
         else:
-            threshold = 3 # default manual threshold
+            threshold = rule.minimum_corrective_events
             is_custom = False
-            rule_desc = "T200 manual section 10 / T350 manual section 6"
+            rule_desc = f"Manual threshold: {rule.minimum_corrective_events} corrective events in {rule.window_months} months"
 
         repairs = query_records("maintenance", asset_id=wid)
         corrective_pj_repairs = [
             m for m in repairs
             if m.get("equipment_kind") == "pump_jack"
             and m.get("maintenance_type") == "corrective"
-            and one_year_ago <= str(m.get("started_at", ""))[:10] <= as_of
+            and window_start <= str(m.get("started_at", ""))[:10] <= as_of
         ]
 
         if len(corrective_pj_repairs) >= threshold:
@@ -102,19 +107,24 @@ def get_pump_jack_rca_wells(
 
 
 def get_containment_breaches_in_area(
-    area_name: str = "Southwest Block 24",
+    area_name: str | None = None,
     days: int = 90,
-    as_of: str = "2026-10-16",
-    sop_limit_hours: float = 4.0,
+    as_of: str | None = None,
+    sop_limit_hours: float | None = None,
 ) -> list[dict[str, Any]]:
+    as_of = as_of or get_reference_date()
+    if sop_limit_hours is None:
+        sop_limit_hours = float(load_compliance_rules(str(get_sample_data_root())).spill_containment_hours)
     areas = query_records("area")
-    target_area = next((a for a in areas if a.get("name", "").lower() == area_name.lower()), None)
-    if not target_area:
+    target_area = next((a for a in areas if area_name and a.get("name", "").casefold() == area_name.casefold()), None)
+    if area_name and not target_area:
         return []
-
-    area_id = target_area.get("area_id")
+    area_id = target_area.get("area_id") if target_area else None
     wells = query_records("well")
-    area_wells = {w.get("asset_id"): w for w in wells if w.get("area_id") == area_id}
+    area_wells = {
+        w.get("asset_id"): w for w in wells
+        if area_id is None or w.get("area_id") == area_id
+    }
 
     cutoff_date = (date.fromisoformat(as_of) - timedelta(days=days)).isoformat()
 

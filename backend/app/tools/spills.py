@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+import calendar
+from datetime import date
 from typing import Any
 
 from backend.app.calc.rules import assess_spill, load_spill_rules
-from backend.app.tools.db import get_sample_data_root, query_records
+from backend.app.tools.db import get_reference_date, get_sample_data_root, query_records
 
 
 def get_all_real_spills(
@@ -14,8 +15,9 @@ def get_all_real_spills(
     area_name: str | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
-    as_of: str = "2026-10-16",
+    as_of: str | None = None,
 ) -> list[dict[str, Any]]:
+    as_of = as_of or get_reference_date()
     sample_root = get_sample_data_root()
     rules = load_spill_rules(sample_root)
 
@@ -113,15 +115,21 @@ def get_all_real_spills(
     return real_spills
 
 
-def get_area_spills_summary_for_heatmap(year: int = 2026, as_of: str = "2026-10-16") -> dict[str, Any]:
+def get_area_spills_summary_for_heatmap(year: int | None = None, as_of: str | None = None) -> dict[str, Any]:
+    as_of = as_of or get_reference_date()
+    reference_date = date.fromisoformat(as_of[:10])
+    year = year or reference_date.year
     areas = query_records("area")
     area_map = {a.get("area_id"): a.get("name") for a in areas}
 
     start_date = f"{year}-01-01"
-    spills = get_all_real_spills(start_date=start_date, end_date=as_of, as_of=as_of)
+    year_end = f"{year}-12-31"
+    end_date = min(as_of[:10], year_end)
+    spills = get_all_real_spills(start_date=start_date, end_date=end_date, as_of=as_of)
 
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct"]
-    month_indices = {i + 1: m for i, m in enumerate(months)}
+    last_month = reference_date.month if year == reference_date.year else 12
+    months = [calendar.month_abbr[month] for month in range(1, last_month + 1)]
+    month_indices = {index + 1: month for index, month in enumerate(months)}
 
     grid: dict[str, dict[str, int]] = {a_name: {m: 0 for m in months} for a_name in area_map.values()}
 
@@ -141,9 +149,7 @@ def get_area_spills_summary_for_heatmap(year: int = 2026, as_of: str = "2026-10-
         row = {"Area": a_name, **m_counts, "Total": total}
         table_rows.append(row)
 
-    # Sort in standard order
-    order = ["Southwest Block 23", "Southwest Block 24", "Northeast Block 7", "Northeast Block 8"]
-    table_rows.sort(key=lambda r: order.index(r["Area"]) if r["Area"] in order else 99)
+    table_rows.sort(key=lambda row: str(row["Area"]).casefold())
 
     return {
         "year": year,
