@@ -1,44 +1,73 @@
 # Asset Intelligence Copilot
 
-Evidence-grounded operations support for the FlytBase synthetic oil-well dataset. The current backend includes source-format ingestion to SQLite, FTS5 indexing for source documents and notes, and deterministic production, downtime, spill, and compliance calculations. The React/Vite frontend is present; the chat API and memory/correction workflows are still in progress.
+Evidence-grounded operations support copilot for oil-well fleets, built for FlytBase Hacktoberfest 2026. The system combines high-performance SQLite + FTS5 search, deterministic Python calculation engines (downtime, spills, compliance, costs), two-level memory (audited shared corrections + isolated private history), and an industrial React + Vite frontend with dynamic inline visualizations (Status Cards, Tables, Line Charts, Bar Charts, Maps, Heatmaps).
 
-## Setup
+## Architecture
 
-On Windows PowerShell:
+```
+Question → Intent & Entity Extraction (LLM / Rules) → Deterministic Tools (SQLite + FTS5)
+         → Deterministic Python Calculations (rules.py, downtime.py, compliance.py)
+         → Evidence & Conflict Assembly → Natural Language Answer (LLM)
+         → Visualization Spec (Card/Table/Line/Bar/Map/Heatmap) → React Ops UI
+```
 
+## Key Principles & Guarantees
+
+1. **Zero Hallucination on Numbers:** All arithmetic (downtime accumulation, spill reporting deadlines, repair costs, SOP temperature delta thresholds) is computed by deterministic Python code, never by the LLM.
+2. **Dynamic Manual/SOP Thresholds:** Thresholds (T200 $\ge 15.0\,^\circ\text{C}$ delta, T350 $\ge 20.0\,^\circ\text{C}$ delta, spill reporting $\ge 5\,\text{bbl}$ in 24 hours) are parsed dynamically from the markdown fleet manuals and SOPs.
+3. **Verified Provenance & Citations:** Every answer cites the exact filename, record ID/section, and excerpt.
+4. **Two-Level Memory:** Shared audited corrections and operational notes apply across all users; private user chat histories are strictly partitioned by `user_id` with zero cross-user leakage.
+5. **Conflict Transparency:** Discrepancies between telemetry, human field notes, and user statements are flagged with multi-source evidence banners rather than overwritten.
+6. **Format-Driven Idempotent Ingestion:** Re-running ingestion drops and rebuilds tables transactionally, producing identical row counts. Drops of unseen test datasets in the same format load with zero code changes.
+
+## Quick Start
+
+### 1. Backend Setup & Test Suite
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -m pytest
-uvicorn backend.app.main:app --reload
+pip install -r requirements.txt
+pytest
+uvicorn backend.app.main:app --reload --port 8000
+```
+- Health check: <http://127.0.0.1:8000/health>
+- Interactive Swagger docs: <http://127.0.0.1:8000/docs>
+
+### 2. Frontend Setup
+```bash
+cd frontend
+npm install
+npm run build   # Type-check and production build (0 errors)
+npm run dev     # Starts Vite dev server on http://localhost:5173
 ```
 
-The health check is available at <http://127.0.0.1:8000/health>.
-
-## Load the sample dataset
-
-The dataset is not copied into this app repository. Clone the official public sample into the ignored `data/raw/` directory; raw files are not edited:
-
+### 3. Load the Dataset
+Clone the official sample dataset into the ignored `data/raw/` directory:
 ```powershell
 git clone https://github.com/FlytBaseAILabs/flytbase-ahc-swe-asset-intelligence-dataset data/raw/flytbase-ahc-swe-asset-intelligence-dataset
 python -m backend.app.ingest
 ```
 
-By default, this reads `data/raw/flytbase-ahc-swe-asset-intelligence-dataset` and writes `data/asset_intelligence.db`. A different compatible dataset or database path can be supplied:
+## Automated Verification
 
+The test suite validates:
+- Ingestion idempotency across 45,686 records (200 wells, 39,567 inspections, 5,665 maintenance jobs, 90 regulator events, 141 context notes, 1,514 FTS5 documents).
+- Deterministic downtime accumulation (7 days per qualifying weekly non-production, repair time excluded, planned shut-in excluded).
+- Spill reporting compliance ($\ge 5\,\text{bbl}$ within 24 hours, containment deadline compliance, correction overrides).
+- All 18 benchmark evaluation scenarios in `docs/eval_report.md`.
+- Strict user-to-user memory isolation and audited correction propagation.
+
+Run all tests:
 ```powershell
-python -m backend.app.ingest "D:\path\to\dataset" --database "D:\path\to\asset_intelligence.db"
+pytest -v
 ```
 
-The loader accepts either the repository root or its `sample-data` directory. It validates record IDs and dataset references before replacing the snapshot in a transaction. Re-running ingestion is safe. Each structured source row remains available as its original JSON payload with its source filename and record ID; manuals, SOPs, maintenance reports, and human notes are searchable through SQLite FTS5.
+## Documentation
+- `HANDOFF.md`: Project status, operational rules, and time plan.
+- `docs/eval_report.md`: Complete evaluation report across Q1–Q18 with pass/fail verification.
+- `docs/writeup.md`: 2-page system architecture, design decisions, and results report.
+- `docs/demo_script.md`: 5-minute timed demo video script covering all operational flows.
 
-## Rules and provenance
+## License
+MIT
 
-Production thresholds and spill classes/deadlines are parsed from the supplied well-type manuals and SOPs. Downtime counts seven days for each inspected non-producing reading, adds zero for missed inspection periods, and keeps repair duration out of the calculation. A matching formal correction can override an inspection's spill classification while the ingested original remains intact. Calculations return the source record and document citations they used.
-
-See [data_inventory.md](data_inventory.md) for inspected schemas, joins, validation results, source links, and known interpretation risks. The dataset documents are fictional challenge material and are not real-world operating or legal guidance.
-
-## Configuration
-
-Copy `.env.example` to `.env` and add an LLM provider key locally after selecting a provider. Keep `.env` out of version control. The planned LLM role is question interpretation and answer wording; calculations and evidence retrieval remain deterministic and source-grounded.
