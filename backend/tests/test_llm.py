@@ -35,6 +35,7 @@ class FakeClient(LLMClient):
 
 
 def test_factory_selects_client_from_provider_environment(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
     monkeypatch.setenv("LLM_PROVIDER", "gemini")
     gemini = get_llm(cache_path=tmp_path / "gemini.db")
     assert isinstance(gemini.client, GeminiClient)

@@ -20,11 +20,19 @@ def _questions(payload: Any) -> list[dict[str, str]]:
             question, label = item, str(index)
         elif isinstance(item, dict) and isinstance(item.get("question"), str):
             question, label = item["question"], str(item.get("id", index))
+            per_item_user = item.get("user_id")
+            if per_item_user is not None and not isinstance(per_item_user, str):
+                raise ValueError(f"Question {index} user_id must be a string")
         else:
             raise ValueError(f"Question {index} must be a string or an object with a string 'question'")
         if not question.strip():
             raise ValueError(f"Question {index} cannot be empty")
-        result.append({"id": label, "question": question.strip()})
+        normalized = {"id": label, "question": question.strip()}
+        if isinstance(item, dict) and isinstance(item.get("user_id"), str):
+            normalized["user_id"] = item["user_id"]
+        if isinstance(item, dict) and isinstance(item.get("session_id"), str):
+            normalized["session_id"] = item["session_id"]
+        result.append(normalized)
     return result
 
 
@@ -66,9 +74,15 @@ def run_questions(
     results = []
     with httpx.Client(base_url=base_url.rstrip("/"), timeout=90.0, transport=transport) as client:
         for item in questions:
+            request_body = {
+                "question": item["question"],
+                "user_id": item.get("user_id", user_id),
+            }
+            if item.get("session_id"):
+                request_body["session_id"] = item["session_id"]
             response = client.post(
                 "/chat",
-                json={"question": item["question"], "user_id": user_id},
+                json=request_body,
             )
             response.raise_for_status()
             payload = response.json()

@@ -360,7 +360,7 @@ class CopilotEngine:
             wt_match = re.search(r"\bT\d{3}\b", q, re.I)
             num_match = re.search(r"(\d+)\s+repairs", q, re.I)
             if wt_match and num_match:
-                wtype = wt_match.group(1).upper()
+                wtype = wt_match.group(0).upper()
                 threshold = int(num_match.group(1))
                 equipment_match = re.search(r"\b(pump[ -]?jack|flowline|motor|compressor)\b", lower)
                 equipment = equipment_match.group(1).replace(" ", "_").replace("-", "_") if equipment_match else "pump_jack"
@@ -436,161 +436,94 @@ class CopilotEngine:
         mem_conn: Any,
     ) -> dict[str, Any] | None:
         lower = q.lower()
+        well_match = re.search(r"\bWELL-\d{4}\b", q, re.I)
+        if not well_match:
+            return None
+        well_id = well_match.group(0).upper()
 
-        # Q17: Tyler Hughes: "WELL-0175 is running fine."
-        if "well-0175" in lower and ("running fine" in lower or "running ok" in lower or "operating" in lower):
-            # Check reality: 15 Oct inspection by Jessica Reed shows wellhead only 0.4 C above air
-            well_det = get_well_details("WELL-0175", as_of=self.as_of)
+        if "spill" in lower and any(term in lower for term in ("real oil", "produced water", "crude", "was it real")):
+            target_date = _question_date(q, self.as_of)
+            spills = get_all_real_spills(well_id=well_id, as_of=self.as_of)
+            spill = next((row for row in spills if not target_date or row.get("date") == target_date), None)
+            inspections = query_records("inspection", asset_id=well_id, order_by_event=True)
+            inspection = next((row for row in inspections if (not target_date or str(row.get("inspected_at", ""))[:10] == target_date) and (not spill or row.get("inspection_id") == spill.get("inspection_id"))), None)
+            if not inspection:
+                return None
+            inspection_id = str(inspection.get("inspection_id"))
+            notes = [row for row in query_records("context", asset_id=well_id, order_by_event=True) if row.get("inspection_id") == inspection_id]
+            if spill:
+                answer = f"**Yes, the recorded detection at {well_id} on {str(inspection.get('inspected_at', ''))[:10]} stands as a real spill** ({spill.get('volume_bbl')} bbl, {spill.get('classification')})."
+            else:
+                answer = f"The detection at {well_id} on {str(inspection.get('inspected_at', ''))[:10]} is not counted as a confirmed real spill under the recorded corrections."
+            if notes:
+                note_lines = [
+                    f"• {_user_display_name(row.get('author_user_id'))}: {row.get('text')}"
+                    for row in notes
+                ]
+                answer += "\n\nRelated field notes:\n" + "\n".join(note_lines)
+            citations = [{
+                "id": f"cit-{inspection_id}",
+                "source_type": "inspection",
+                "source_file": f"assets/{well_id}/inspections.jsonl",
+                "record_id": inspection_id,
+                "date": str(inspection.get("inspected_at", ""))[:10],
+                "excerpt": str(inspection.get("notes", "")) or f"Detected volume: {inspection.get('spill_est_volume_bbl')} bbl.",
+                "well_id": well_id,
+            }]
+            citations.extend({
+                "id": f"cit-{note.get('note_id')}",
+                "source_type": "note",
+                "source_file": f"assets/{well_id}/context.jsonl",
+                "record_id": note.get("note_id"),
+                "excerpt": note.get("text"),
+                "well_id": well_id,
+            } for note in notes)
+            disagreement = len(notes) > 1 and any(re.search(r"\b(water|not crude|not a spill)\b", str(note.get("text", "")), re.IGNORECASE) for note in notes)
+            return {"answer": answer, "citations": citations, "visualization": None, "conflict": disagreement, "conflict_message": "Source notes contain conflicting spill interpretations." if disagreement else None}
+
+        positive_claim = bool(re.search(r"\b(running fine|running ok|back online|operational)\b|(?<!not )\bproducing\b", lower))
+        negative_claim = bool(re.search(r"\b(shut[- ]?in|offline|not producing|down)\b", lower))
+        is_question = q.strip().endswith("?") or bool(re.match(r"\s*(is|was|does|did|can|could|should|what|which|how|show|list|plot|mark|find|compare)\b", lower))
+        if (positive_claim or negative_claim) and not is_question:
+            well_det = get_well_details(well_id, as_of=self.as_of)
+            if not well_det:
+                return {"answer": f"Well {well_id} was not found.", "citations": [], "visualization": None}
+            planned_claim = negative_claim and bool(re.search(r"\b(planned|work|shut[- ]?in)\b", lower))
+            record_shared_note(mem_conn, author=user_id, text=q, asset_id=well_id, confirmed=planned_claim)
+            actual = well_det.get("is_producing")
+            contradicts = actual is not None and ((positive_claim and not actual) or (negative_claim and actual))
+            inspection = well_det.get("latest_inspection") or {}
             delta = well_det.get("temperature_delta_c")
-            insp = well_det.get("latest_inspection", {})
-
-            # Record Tyler's statement as unconfirmed
-            record_shared_note(
-                mem_conn,
-                author=user_id,
-                text=q,
-                asset_id="WELL-0175",
-                confirmed=False,
-            )
-
-            ans = (
-                f"⚠️ **Conflict Detected**: The latest weekly inspection on 15 Oct 2026 (by Jessica Reed, INS-0175-0205) "
-                f"shows the wellhead temperature was only **{delta} °C above ambient air**, which is below the T200 15.0 °C threshold. "
-                f"Therefore, the physical sensor data indicates **WELL-0175 is not producing oil**.\n\n"
-                f"This matches Michael Turner's earlier report that WELL-0175 has been shut in for planned work since 14 Oct. "
-                f"Your claim that the well is 'running fine' disagrees with the physical data and has been recorded as **unconfirmed**. "
-                f"Please verify the wellhead status on site."
-            )
-
-            citations = [
-                {
-                    "id": "cit-ins-0175",
-                    "source_type": "inspection",
-                    "source_file": "assets/WELL-0175/inspections.jsonl",
-                    "record_id": insp.get("inspection_id"),
-                    "excerpt": f"Wellhead temp delta: {delta} °C above ambient (below 15.0 °C threshold).",
-                    "well_id": "WELL-0175",
-                    "date": "2026-10-15",
-                },
-                {
-                    "id": "cit-t200",
-                    "source_type": "manual",
-                    "source_file": "fleet/well-types/T200.md",
-                    "section": "section 9.3",
-                    "excerpt": "A T200 well is considered producing when wellhead temperature is at least 15 °C above ambient.",
-                },
-            ]
-
-            return {
-                "answer": ans,
-                "citations": citations,
-                "visualization": None,
-                "conflict": True,
-                "conflict_message": "User statement contradicts physical inspection telemetry and prior planned shut-in notice.",
-            }
-
-        # Q17: Jake Morales: "WELL-0001 is back online since 14 Oct."
-        if "well-0001" in lower and "back online" in lower:
-            well_det = get_well_details("WELL-0001", as_of=self.as_of)
-            delta = well_det.get("temperature_delta_c")
-            insp = well_det.get("latest_inspection", {})
-
-            record_shared_note(
-                mem_conn,
-                author=user_id,
-                text=q,
-                asset_id="WELL-0001",
-                confirmed=False,
-            )
-
-            ans = (
-                f"⚠️ **Conflict Detected**: The 15 Oct 2026 inspection (INS-0001-0203) recorded the wellhead only **{delta} °C above air**, "
-                f"and noted 'Pump jack not moving.' Physical data shows WELL-0001 is **not producing oil**.\n\n"
-                f"Additionally, context note CTX-0001-003 indicates the planned rod string replacement was not expected back online "
-                f"until around 20 Oct. Your claim has been recorded as **unconfirmed**. Please check field telemetry or work order records."
-            )
-
-            citations = [
-                {
-                    "id": "cit-ins-0001",
-                    "source_type": "inspection",
-                    "source_file": "assets/WELL-0001/inspections.jsonl",
-                    "record_id": insp.get("inspection_id"),
-                    "excerpt": "Pump jack not moving. Temperature delta 3.2 °C.",
-                    "well_id": "WELL-0001",
-                    "date": "2026-10-15",
-                },
-                {
-                    "id": "cit-ctx-0001",
-                    "source_type": "note",
-                    "source_file": "assets/WELL-0001/context.jsonl",
-                    "record_id": "CTX-0001-003",
-                    "excerpt": "Planned shut-in from 7 Oct. Expected back online around 20 Oct.",
-                    "well_id": "WELL-0001",
-                },
-            ]
-
-            return {
-                "answer": ans,
-                "citations": citations,
-                "visualization": None,
-                "conflict": True,
-                "conflict_message": "Statement contradicts inspection reading and context note return estimate.",
-            }
-
-        # Q18: "Was the 20 Aug spill at WELL-0101 real oil?"
-        if "well-0101" in lower and ("20 aug" in lower or "spill" in lower) and ("real oil" in lower or "water" in lower or "crude" in lower):
-            ans = (
-                f"**Yes, it stands as a real oil spill**, but there was active disagreement:\n\n"
-                f"1. **Detection**: Inspection INS-0101-0197 on 20 Aug 2026 detected a 1.0 bbl spill ('Oil sheen around cellar').\n"
-                f"2. **Disagreement**: Note CTX-0101-002 (by Ryan Brooks) suggested it was produced water, while Note CTX-0101-003 (by Chris Dalton, HSE) sampled the stain and confirmed crude oil.\n"
-                f"3. **Resolution**: Neither note was filed as a formal invalidation, and a spill repair (MNT-0101-029) was executed. "
-                f"Therefore, the official detection stands as real crude."
-            )
-
-            citations = [
-                {
-                    "id": "cit-ins-0101",
-                    "source_type": "inspection",
-                    "source_file": "assets/WELL-0101/inspections.jsonl",
-                    "record_id": "INS-0101-0197",
-                    "excerpt": "Oil sheen around cellar, 1.0 bbl estimated.",
-                    "well_id": "WELL-0101",
-                    "date": "2026-08-20",
-                },
-                {
-                    "id": "cit-ctx-0101-002",
-                    "source_type": "note",
-                    "source_file": "assets/WELL-0101/context.jsonl",
-                    "record_id": "CTX-0101-002",
-                    "excerpt": "Ryan Brooks noted stain looked like produced water.",
-                    "well_id": "WELL-0101",
-                },
-                {
-                    "id": "cit-ctx-0101-003",
-                    "source_type": "note",
-                    "source_file": "assets/WELL-0101/context.jsonl",
-                    "record_id": "CTX-0101-003",
-                    "excerpt": "Chris Dalton (HSE) sampled stain and confirmed crude.",
-                    "well_id": "WELL-0101",
-                },
-                {
-                    "id": "cit-mnt-0101",
-                    "source_type": "repair",
-                    "source_file": "assets/WELL-0101/maintenance.jsonl",
-                    "record_id": "MNT-0101-029",
-                    "excerpt": "Spill cleanup and stuffing box repair completed.",
-                    "well_id": "WELL-0101",
-                },
-            ]
-
-            return {
-                "answer": ans,
-                "citations": citations,
-                "visualization": None,
-                "conflict": True,
-                "conflict_message": "Human notes disagree on whether release was crude oil or produced water.",
-            }
+            threshold = well_det.get("threshold_delta_c")
+            status = "producing" if actual else "not producing" if actual is False else "unknown"
+            inspection_date = str(inspection.get("inspected_at", ""))[:10]
+            inspector = _user_display_name(inspection.get("inspector_user_id"))
+            citations = [{
+                "id": f"cit-{inspection.get('inspection_id')}",
+                "source_type": "inspection",
+                "source_file": f"assets/{well_id}/inspections.jsonl",
+                "record_id": inspection.get("inspection_id"),
+                "date": inspection_date,
+                "excerpt": f"Inspected by {inspector}; temperature delta {delta} °C, threshold {threshold} °C. {inspection.get('notes', '')}",
+                "well_id": well_id,
+            }]
+            well_type = str(well_det.get("well_type", ""))
+            production_rule = load_production_rule(well_type, self.sample_root)
+            citations.append({"id": f"cit-rule-{well_type}", "source_type": "manual", "source_file": production_rule.citation.split("#", 1)[0], "excerpt": f"{well_type} producing threshold: {production_rule.minimum_delta_c} °C above ambient."})
+            prior_notes = [note for note in retrieve_shared_memory(mem_conn, well_id=well_id).get("notes", []) if note.get("text") != q]
+            relevant = [note for note in prior_notes if re.search(r"\b(running|online|producing|shut[- ]?in|offline|down)\b", str(note.get("text", "")), re.IGNORECASE)]
+            if relevant:
+                prior = relevant[-1]
+                author = _user_display_name(str(prior.get("author", "")))
+                answer = f"Latest inspection on {inspection_date} (by {inspector}) indicates {well_id} is {status}: the measured delta is {delta} °C against a {threshold} °C limit. Your claim has been recorded."
+                answer += f" A prior shared note by {author} says: {prior.get('text')}"
+            else:
+                answer = f"Latest inspection on {inspection_date} (by {inspector}) indicates {well_id} is {status}: the measured delta is {delta} °C against a {threshold} °C limit."
+            if contradicts:
+                answer += " The inspection evidence conflicts with the status claim; it is recorded as unconfirmed. Please verify in the field."
+            elif planned_claim:
+                answer += " The planned status note is recorded for shared operational context."
+            return {"answer": answer, "citations": citations, "visualization": None, "conflict": contradicts, "conflict_message": "User status claim contradicts inspection telemetry." if contradicts else None}
 
         return None
 
@@ -635,20 +568,15 @@ class CopilotEngine:
                 }
 
             year = int(self.as_of[:4])
-            year_start, year_end = f"{year}-01-01", self.as_of
             costs_data = []
             citations = []
             for wid in three_wells:
-                cost_res = query_metric(
-                    "repair_cost", well_id=wid, date_from=year_start, date_to=year_end,
-                    group_by="well", reference_date=self.as_of,
-                )
-                repair_count = sum(row["record_count"] for row in cost_res["rows"])
+                cost_res = get_well_repairs_cost(wid, year=year)
                 costs_data.append(
                     {
                         "Well": wid,
-                        f"{year} Repair Cost": f"USD {cost_res['total']:,}",
-                        "Repairs Count": repair_count,
+                        f"{year} Repair Cost": f"USD {cost_res['total_cost_usd']:,}",
+                        "Repairs Count": cost_res["repair_count"],
                     }
                 )
                 citations.append(
@@ -656,7 +584,7 @@ class CopilotEngine:
                         "id": f"cit-cost-{wid}",
                         "source_type": "repair",
                         "source_file": f"assets/{wid}/maintenance.jsonl",
-                        "excerpt": f"Total {year} maintenance cost: USD {cost_res['total']:,}",
+                        "excerpt": f"Total {year} maintenance cost: USD {cost_res['total_cost_usd']:,}",
                         "well_id": wid,
                     }
                 )
@@ -783,7 +711,7 @@ class CopilotEngine:
                 notes = well_det.get("notes", [])
                 for n in notes:
                     if "shut in" in str(n.get("text", "")).lower():
-                        reason = f"Note {n.get('note_id')} by Jake Morales: {n.get('text')}"
+                        reason = f"Note {n.get('note_id')} by {_user_display_name(n.get('author_user_id'))}: {n.get('text')}"
                         citations.append(
                             {
                                 "id": f"cit-{n.get('note_id')}",
@@ -1358,30 +1286,26 @@ class CopilotEngine:
             reportable = [s for s in spills if s.get("external_report_required")]
 
             if reportable:
-                s = reportable[0]
-                ans = (
-                    f"**{s['well_id']}** had a spill requiring a regulator report in {area_name or 'the selected fleet'} "
-                    f"({s['volume_bbl']} bbl on {s['date']}, following the volume correction).\n\n"
-                    f"A written notice is not recorded for this spill, so it is flagged as a possible SR-01 breach. "
-                    f"{len(reportable)} reportable spill(s) were found in the selected period."
-                )
-                citations = [
-                    {
-                        "id": f"cit-rep-{s['inspection_id']}",
-                        "source_type": "inspection",
-                        "source_file": f"assets/{s['well_id']}/inspections.jsonl",
-                        "record_id": s["inspection_id"],
-                        "excerpt": f"Spill volume: {s['volume_bbl']} bbl (reportable).",
-                        "well_id": s["well_id"],
-                    },
-                    {
-                        "id": "cit-sop-rep",
-                        "source_type": "manual",
-                        "source_file": "fleet/sops/spill-response-sop.md",
-                        "section": "section 3 & 4 (SR-01)",
-                        "excerpt": "Spills of 5 bbl or more require written report within 24 hours.",
-                    },
-                ]
+                lines = []
+                citations = []
+                for spill in reportable:
+                    events = query_records("regulatory_event", asset_id=str(spill["well_id"]))
+                    report_event = next((event for event in events if event.get("event_type") == "spill_report_filed" and event.get("related_inspection_id") == spill.get("inspection_id")), None)
+                    deadline_hours = spill.get("report_deadline_hours")
+                    if report_event:
+                        hours = report_event.get("hours_to_report")
+                        status = "filing time is unknown" if hours is None else f"reported after {hours} hours" if float(hours) > float(deadline_hours) else f"reported within {deadline_hours} hours"
+                        citations.append({"id": f"cit-{report_event.get('event_id')}", "source_type": "regulatory", "source_file": f"assets/{spill['well_id']}/regulatory-events.jsonl", "record_id": report_event.get("event_id"), "excerpt": f"Spill report filing time: {hours} hours.", "well_id": spill["well_id"]})
+                    else:
+                        insp = next((row for row in query_records("inspection", asset_id=str(spill["well_id"])) if row.get("inspection_id") == spill.get("inspection_id")), {})
+                        discovered = datetime.fromisoformat(str(insp.get("inspected_at", "")).replace("Z", "+00:00"))
+                        due = discovered + timedelta(hours=float(deadline_hours or 0))
+                        cutoff = datetime.combine(date.fromisoformat(end_date), datetime.max.time(), tzinfo=timezone.utc)
+                        status = f"no report is recorded; deadline passed at {due.isoformat()}" if due <= cutoff else f"no report is recorded; deadline is {due.isoformat()}"
+                    lines.append(f"• **{spill['well_id']}**: {spill['volume_bbl']} bbl on {spill['date']} ({status}).")
+                    citations.append({"id": f"cit-{spill['inspection_id']}", "source_type": "inspection", "source_file": f"assets/{spill['well_id']}/inspections.jsonl", "record_id": spill["inspection_id"], "excerpt": f"{spill['volume_bbl']} bbl spill; reporting deadline {deadline_hours} hours.", "well_id": spill["well_id"], "date": spill["date"]})
+                citations.append({"id": "cit-spill-sop", "source_type": "manual", "source_file": "fleet/sops/spill-response-sop.md", "excerpt": "Spill reporting thresholds and deadlines are specified in the Spill Response SOP."})
+                ans = f"Found {len(reportable)} spill(s) that require a regulator report in {area_name or 'the selected fleet'} from {start_date} through {end_date}:\n\n" + "\n".join(lines)
             else:
                 ans = f"No spill requiring a regulator report was found in {area_name or 'the selected fleet'} from {start_date} through {end_date}."
                 citations = []
