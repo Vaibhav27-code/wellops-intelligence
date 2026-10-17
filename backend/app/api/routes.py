@@ -48,7 +48,7 @@ def chat(req: ChatRequestModel) -> dict[str, Any]:
     service = LLMQuestionService()
     return service.answer(
         req.question,
-        lambda _intent: engine.process_query(req.question, req.user_id, req.session_id),
+        lambda intent: engine.process_query(req.question, req.user_id, req.session_id, intent),
     )
 
 

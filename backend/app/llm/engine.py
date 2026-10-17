@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from backend.app.calc.rules import load_production_rule
+from backend.app.llm.rules_fallback import Intent
 from backend.app.memory.store import (
     append_private_message,
     apply_corrections_to_inspection,
@@ -42,6 +43,7 @@ class CopilotEngine:
         question: str,
         user_id: str,
         session_id: str | None = None,
+        intent: Intent | None = None,
     ) -> dict[str, Any]:
         q = question.strip()
         mem_conn = open_memory(get_db_path())
@@ -65,7 +67,7 @@ class CopilotEngine:
                 return mem_resp
 
             # 4. Standard Domain Scenarios
-            resp = self._handle_domain_queries(q, user_id, mem_conn)
+            resp = self._handle_domain_queries(q, user_id, mem_conn, intent)
             self._record_interaction(mem_conn, user_id, q, resp)
             return resp
         finally:
@@ -596,12 +598,14 @@ class CopilotEngine:
         q: str,
         user_id: str,
         mem_conn: Any,
+        intent: Intent | None = None,
     ) -> dict[str, Any]:
         lower = q.lower()
+        intent_name = intent.intent if intent else None
 
         # Q1 / Q15: Single well status right now (e.g. "Is WELL-0001 producing oil right now?")
         well_match = re.search(r"\bWELL-(\d{4})\b", q, re.I)
-        if well_match and ("producing" in lower or "status" in lower or "inspected" in lower) and "which wells" not in lower and "chart" not in lower:
+        if well_match and (intent_name == "well_status" or "producing" in lower or "status" in lower or "inspected" in lower) and "which wells" not in lower and "chart" not in lower:
             wid = well_match.group(0).upper()
             well_det = get_well_details(wid, as_of=self.as_of)
             if not well_det:
@@ -786,7 +790,7 @@ class CopilotEngine:
             }
 
         # Q3: Line chart of wellhead temperature against air temperature (e.g. WELL-0001 last 13 weeks)
-        if "line chart" in lower or ("temperature against air" in lower) or ("last 13 weeks" in lower and "chart" in lower):
+        if intent_name == "temperature_trend" or "line chart" in lower or ("temperature against air" in lower) or ("last 13 weeks" in lower and "chart" in lower):
             wid = well_match.group(0).upper() if well_match else "WELL-0001"
             well_det = get_well_details(wid, as_of=self.as_of)
             threshold = well_det.get("threshold_delta_c", 15.0)
@@ -1077,7 +1081,7 @@ class CopilotEngine:
             }
 
         # Q9: Which rules has well broken in last 12 months, and what is still open?
-        if ("rules" in lower or "broken" in lower or "breach" in lower or "compliance" in lower) and well_match:
+        if (intent_name == "compliance" or "rules" in lower or "broken" in lower or "breach" in lower or "compliance" in lower) and well_match:
             wid = well_match.group(0).upper()
             ans = (
                 f"**Compliance Breaches & Open Actions for {wid} (Last 12 Months)**:\n\n"
@@ -1118,7 +1122,7 @@ class CopilotEngine:
             }
 
         # Q10: Spills not contained within SOP limit in area
-        if "not contained" in lower or ("contained" in lower and "limit" in lower):
+        if intent_name == "containment_breach" or "not contained" in lower or ("contained" in lower and "limit" in lower):
             area_name = "Southwest Block 24" if "block 24" in lower else "Northeast Block 8"
             breaches = get_containment_breaches_in_area(area_name, days=90, as_of=self.as_of)
 
@@ -1175,7 +1179,7 @@ class CopilotEngine:
             }
 
         # Q14: Pump jack RCA wells in area
-        if "root-cause" in lower or "rca" in lower:
+        if intent_name == "rca" or "root-cause" in lower or "rca" in lower:
             area_name = "Northeast Block 7" if "block 7" in lower else "Northeast Block 8"
             wells_rca = get_pump_jack_rca_wells(area_name, as_of=self.as_of)
 
