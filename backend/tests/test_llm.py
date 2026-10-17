@@ -247,3 +247,140 @@ def test_invalid_intent_retries_once_and_uses_remaining_call_budget(
     assert result["intent"]["intent"] == "downtime"
     assert raw.calls == 2
     assert result["answer"] == "21 downtime days."
+
+
+def test_mocked_llm_valid_intent_tool_call_cited_answer(tmp_path: Path) -> None:
+    intent_json = Intent(intent="downtime", well_ids=["WELL-0001"], year=2025).model_dump_json()
+    raw = FakeClient(responses=[intent_json, "WELL-0001 recorded 21 downtime days in 2025."])
+    client = ReliableLLMClient(raw, cache_path=tmp_path / "llm.db")
+    tool_citations = [
+        {
+            "id": "cit-INS-0001-0150",
+            "source_type": "inspection",
+            "source_file": "assets/WELL-0001/inspections.jsonl",
+            "record_id": "INS-0001-0150",
+            "date": "2025-07-24",
+            "excerpt": "Wellhead temp 18.0 °C, air 22.0 °C",
+        }
+    ]
+
+    result = LLMQuestionService(client).answer(
+        "How many days was WELL-0001 down in 2025?",
+        lambda _intent: {
+            "answer": "WELL-0001 had 21 downtime days in 2025.",
+            "citations": tool_citations,
+            "visualization": {"type": "card", "title": "Downtime", "data": [{"days": 21}]},
+        },
+    )
+
+    assert raw.calls == 2
+    assert result["answer_text"] == "WELL-0001 recorded 21 downtime days in 2025."
+    assert result["answer"] == "WELL-0001 recorded 21 downtime days in 2025."
+    assert result["citations"] == tool_citations
+    assert "Downtime is calculated deterministically" in result["calculation_explanation"]
+    assert result["conflicts"] == []
+    assert result["conflict"] is False
+    assert result["visualization"]["type"] == "card"
+
+
+def test_mocked_llm_failure_rules_fallback_still_answers(tmp_path: Path) -> None:
+    raw = FakeClient(error=RuntimeError("Connection refused by provider"))
+    client = ReliableLLMClient(raw, cache_path=tmp_path / "llm.db")
+    tool_citations = [
+        {
+            "id": "cit-INS-0001-0203",
+            "source_file": "assets/WELL-0001/inspections.jsonl",
+            "record_id": "INS-0001-0203",
+            "date": "2026-10-15",
+        }
+    ]
+
+    result = LLMQuestionService(client).answer(
+        "Is WELL-0001 producing oil right now?",
+        lambda intent: {
+            "answer": f"Evaluated intent {intent.intent}: WELL-0001 is offline.",
+            "citations": tool_citations,
+            "visualization": None,
+        },
+    )
+
+    assert result["intent"]["intent"] == "well_status"
+    assert result["answer_text"] == "Evaluated intent well_status: WELL-0001 is offline."
+    assert result["citations"] == tool_citations
+    assert len(result["citations"]) == 1
+    assert result["conflicts"] == []
+
+
+def test_citations_in_response_all_exist_in_tool_output(tmp_path: Path) -> None:
+    intent_json = Intent(intent="well_status", well_ids=["WELL-0001"]).model_dump_json()
+    # LLM wording attempts to mention a hallucinated citation or citation ID
+    raw = FakeClient(responses=[intent_json, "WELL-0001 is offline per fake citation CIT-9999."])
+    client = ReliableLLMClient(raw, cache_path=tmp_path / "llm.db")
+    tool_citations = [
+        {
+            "id": "cit-INS-0001-0203",
+            "source_file": "assets/WELL-0001/inspections.jsonl",
+            "record_id": "INS-0001-0203",
+            "date": "2026-10-15",
+            "excerpt": "Wellhead temp 23.2 C",
+        }
+    ]
+
+    result = LLMQuestionService(client).answer(
+        "Is WELL-0001 producing oil right now?",
+        lambda _intent: {
+            "answer": "Deterministic tool found WELL-0001 offline.",
+            "citations": tool_citations,
+            "visualization": None,
+        },
+    )
+
+    # Response citations must strictly come from the tool output
+    assert len(result["citations"]) == len(tool_citations)
+    for res_cit, tool_cit in zip(result["citations"], tool_citations):
+        assert res_cit["id"] == tool_cit["id"]
+        assert res_cit["source_file"] == tool_cit["source_file"]
+        assert res_cit["record_id"] == tool_cit["record_id"]
+    assert not any("CIT-9999" in c["id"] for c in result["citations"])
+
+
+def test_two_users_histories_stay_isolated_in_chat_pipeline() -> None:
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+
+    client = TestClient(app)
+    # User A asks about downtime in Northeast Block 7
+    resp_a = client.post(
+        "/chat",
+        json={
+            "question": "Which 3 wells in Northeast Block 7 had the most downtime in the last 4 months?",
+            "user_id": "user-michael-turner",
+        },
+    )
+    assert resp_a.status_code == 200
+    assert "WELL-0121" in resp_a.json()["answer"]
+
+    # User A asks about the wells discussed yesterday -> recalls WELL-0121, WELL-0138, WELL-0107
+    resp_a_recall = client.post(
+        "/chat",
+        json={
+            "question": "For the three wells we discussed yesterday, what have repairs cost this year?",
+            "user_id": "user-michael-turner",
+        },
+    )
+    assert resp_a_recall.status_code == 200
+    assert "77,912" in resp_a_recall.json()["answer"] or "46,942" in resp_a_recall.json()["answer"]
+
+    # User B asks the exact same recall question -> history isolated, no previous conversation found
+    resp_b_recall = client.post(
+        "/chat",
+        json={
+            "question": "For the three wells we discussed yesterday, what have repairs cost this year?",
+            "user_id": "user-jessica-reed",
+        },
+    )
+    assert resp_b_recall.status_code == 200
+    b_ans = resp_b_recall.json()["answer"]
+    assert "no record of an earlier conversation with you" in b_ans or "private" in b_ans
+    assert "77,912" not in b_ans
+

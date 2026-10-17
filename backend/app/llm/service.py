@@ -99,6 +99,8 @@ class LLMQuestionService:
                 "citations": result.get("citations", []),
                 "visualization": result.get("visualization"),
                 "conflict": result.get("conflict", False),
+                "conflicts": result.get("conflicts", []),
+                "calculation_explanation": result.get("calculation_explanation", ""),
                 "intent": intent.model_dump(),
             }
             try:
@@ -115,7 +117,71 @@ class LLMQuestionService:
                     self.client.provider,
                     self.client.model,
                 )
+
+        # Standardize return dictionary fields
+        answer_text = str(result.get("answer", ""))
+        result["answer_text"] = answer_text
+        result["answer"] = answer_text
+
+        # Ensure conflicts is always a list
+        if "conflicts" not in result or not isinstance(result["conflicts"], list):
+            conflict_msg = result.get("conflict_message")
+            if conflict_msg:
+                result["conflicts"] = [str(conflict_msg)]
+            else:
+                result["conflicts"] = []
+        result["conflict"] = bool(result["conflicts"]) or bool(result.get("conflict", False))
+
+        # Ensure calculation_explanation is populated
+        if not result.get("calculation_explanation"):
+            result["calculation_explanation"] = self._derive_calculation_explanation(intent, result)
+
+        # Keep citations exactly as returned by tools
+        raw_citations = result.get("citations", [])
+        result["citations"] = list(raw_citations) if isinstance(raw_citations, list) else []
+
         return result
+
+    @staticmethod
+    def _derive_calculation_explanation(intent: Intent, result: dict[str, Any]) -> str:
+        name = intent.intent
+        if name == "downtime":
+            return (
+                "Downtime is calculated deterministically per operating rules: each weekly non-producing inspection "
+                "accounts for exactly 7 days. Consecutive qualifying inspections accumulate. Missed inspections count "
+                "as 0 days. Repair durations are not counted as downtime, and planned shut-ins are excluded from unplanned downtime."
+            )
+        if name in ("spill_search", "containment_breach"):
+            return (
+                "Spill metrics and reporting compliance are evaluated against SOP-SR-01 and regulatory limits: releases "
+                ">= 5.0 bbl require 24-hour formal notification, containment within 4 hours, and 60-day agency verification. "
+                "Non-crude and false-positive detections documented in context notes are excluded from spill totals."
+            )
+        if name in ("well_status", "area_nonproducing", "temperature_trend"):
+            return (
+                "Production status is evaluated deterministically by comparing wellhead temperature against ambient temperature "
+                "using the minimum delta threshold parsed directly from the well's operating manual (e.g. 15.0 °C for T200, 20.0 °C for T350)."
+            )
+        if name == "compliance":
+            return (
+                "Compliance is evaluated deterministically against operating SOPs (SR-01 spill reporting, SR-02 containment, "
+                "SR-03 verification, RC-04 notice of violation responses) and agency enforcement records."
+            )
+        if name == "repair_cost":
+            return (
+                "Maintenance expenditures are calculated deterministically by summing labor and parts costs from closed and ongoing work order records."
+            )
+        if name == "rca":
+            return (
+                "Root-cause analysis (RCA) eligibility is calculated by counting pump jack repair events within the fleet area "
+                "and comparing against standard manual thresholds or user-scoped rule overrides."
+            )
+        if name == "correction":
+            return (
+                "Audited correction preserves original sensor record in immutable storage while applying the re-measured value "
+                "to dynamic calculations and re-evaluating downstream compliance classifications."
+            )
+        return "Deterministic rule-based calculation grounded in fleet manuals and database records."
 
     @staticmethod
     def _is_validation_error(error: Exception) -> bool:
