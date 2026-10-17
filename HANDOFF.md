@@ -161,3 +161,5 @@ Format: `[time] tool: done / in progress / blocked / next`
   - Test Suite: 23/23 tests passing (`backend/tests/test_evaluation_queries.py`, `backend/tests/test_ingest_and_calc.py`, `backend/tests/test_health.py`). Full coverage across all 18 benchmark questions (Q1–Q18).
   - Documentation updated: `docs/eval_report.md` with complete pass/fail and citation breakdown.
   - Next: End-to-end frontend verification with live backend.
+
+- [13:06 IST] Codex: confirmed public origin/main is synced at the verified implementation commit; `.env` is ignored and absent / verified earlier: 34 backend pytest tests pass and local `/health` + `/chat` smoke checks pass; no API key is available, so real Gemini smoke remains pending / next: configure GEMINI_API_KEY in ignored local `.env`, run the Gemini smoke, and record its result.
