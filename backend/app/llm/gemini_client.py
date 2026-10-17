@@ -43,7 +43,7 @@ class GeminiClient(LLMClient):
             config["system_instruction"] = system
         if json_schema:
             config["response_mime_type"] = "application/json"
-            config["response_schema"] = json_schema
+            config["response_json_schema"] = json_schema
         response = self._get_client().models.generate_content(
             model=self.model,
             contents=prompt,

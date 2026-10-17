@@ -101,7 +101,7 @@ def test_gemini_client_builds_json_request_without_network(monkeypatch) -> None:
     assert response == '{"intent":"well_status"}'
     assert seen["model"] == "gemini-test"
     assert seen["config"].response_mime_type == "application/json"
-    assert seen["config"].response_schema == schema
+    assert seen["config"].response_json_schema == schema
 
 
 def test_ollama_client_posts_to_local_generate_api_without_network(monkeypatch) -> None:

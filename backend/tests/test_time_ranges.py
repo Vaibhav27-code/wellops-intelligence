@@ -4,6 +4,8 @@ import sqlite3
 
 import pytest
 
+from backend.app.llm.engine import _intent_period
+from backend.app.llm.rules_fallback import Intent
 from backend.app.tools.db import get_reference_date
 from backend.app.tools.time_ranges import resolve_date_range
 
@@ -47,6 +49,15 @@ def test_reference_date_override_is_validated_and_takes_precedence(tmp_path, mon
 )
 def test_relative_and_explicit_periods_resolve_against_reference(kwargs, expected) -> None:
     assert resolve_date_range(reference_date="2026-10-15", **kwargs) == expected
+
+
+def test_explicit_year_does_not_get_overridden_by_engine_default_period() -> None:
+    intent = Intent(intent="downtime", year=2025)
+
+    assert _intent_period(intent, "2026-10-15", "this year") == (
+        "2025-01-01",
+        "2025-12-31",
+    )
 
 
 def test_explicit_date_range_cannot_extend_after_reference_date() -> None:

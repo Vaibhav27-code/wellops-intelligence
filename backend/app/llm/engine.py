@@ -50,6 +50,9 @@ def _user_display_name(user_id: str | None) -> str:
 
 
 def _intent_period(intent: Intent | None, reference_date: str, default_phrase: str) -> tuple[str, str]:
+    date_phrase = intent.date_phrase if intent and intent.date_phrase else None
+    if date_phrase is None and not (intent and intent.year is not None):
+        date_phrase = default_phrase
     return resolve_date_range(
         reference_date=reference_date,
         date_from=intent.date_from if intent else None,
@@ -57,7 +60,7 @@ def _intent_period(intent: Intent | None, reference_date: str, default_phrase: s
         season=intent.season if intent else None,
         quarter=intent.quarter if intent else None,
         year=intent.year if intent else None,
-        date_phrase=(intent.date_phrase if intent and intent.date_phrase else default_phrase),
+        date_phrase=date_phrase,
     )
 
 
