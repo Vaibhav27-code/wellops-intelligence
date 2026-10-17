@@ -1050,7 +1050,6 @@ class CopilotEngine:
                 "conflict": False,
             }
 
-        # Q6: Which wells in area had the most downtime in last 4 months? Show a bar chart.
         if "most downtime" in lower or ("downtime in" in lower and ("bar chart" in lower or "last 4 months" in lower)):
             area_name = intent.area_name if intent and intent.area_name else None
             start_date, end_date = _intent_period(intent, self.as_of, "last 4 months")
@@ -1110,7 +1109,6 @@ class CopilotEngine:
                 "conflict": False,
             }
 
-        # Q7: Show on a map every well in area with real spill in last 90 days
         if "heatmap" not in lower and "map" in lower and "spill" in lower:
             area_name = intent.area_name if intent and intent.area_name else None
             start_date, end_date = _intent_period(intent, self.as_of, "last 90 days")
@@ -1159,7 +1157,6 @@ class CopilotEngine:
                 "conflict": False,
             }
 
-        # Q8: Heatmap of spills by geographic area and month
         if "heatmap" in lower and "spill" in lower:
             target_year = intent.year if intent and intent.year else int(self.as_of[:4])
             year_end = self.as_of if target_year == int(self.as_of[:4]) else f"{target_year}-12-31"
