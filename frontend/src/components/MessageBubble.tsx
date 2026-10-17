@@ -238,7 +238,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
         {/* Calculation explanation */}
         {message.calculation_explanation && (
-          <div
+          <details
             className="calculation-explanation"
             style={{
               marginTop: '8px',
@@ -250,9 +250,11 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               color: 'var(--c-text-muted)',
             }}
           >
-            <strong style={{ color: 'var(--c-accent-h)' }}>Calculation Rule: </strong>
-            {message.calculation_explanation}
-          </div>
+            <summary style={{ cursor: 'pointer', color: 'var(--c-accent-h)', fontWeight: 700 }}>
+              Calculation Rule
+            </summary>
+            <div style={{ marginTop: '6px' }}>{message.calculation_explanation}</div>
+          </details>
         )}
 
         {/* Data Freshness Tag */}

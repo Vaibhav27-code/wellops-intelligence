@@ -12,3 +12,4 @@ data/test_day_runs/
 docs/.eval_run_results.json
 frontend/node_modules/
 frontend/dist/
+/dist/

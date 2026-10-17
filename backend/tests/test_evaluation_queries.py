@@ -281,6 +281,9 @@ def test_q12_temperature_correction_and_re_evaluation():
     wells = [r["Well"] for r in viz["data"]]
     assert "WELL-0164" not in wells
     assert set(wells) == {"WELL-0170", "WELL-0172", "WELL-0175"}
+    assert res_q2.json()["conflict"] is True
+    assert "WELL-0164" in res_q2.json()["answer"]
+    assert any(citation["source_type"] == "correction" for citation in res_q2.json()["citations"])
 
 
 def test_q13_spill_volume_correction():

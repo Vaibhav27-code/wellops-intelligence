@@ -63,6 +63,76 @@ npm run dev
 
 The development server runs at <http://localhost:5173>.
 
+## Recording the demo
+
+The demo driver uses the real sample data and live `/chat` responses. Its reset and server checks refuse any database other than `data/demo.db`; answer-cache traffic uses `data/demo_llm_cache.db`. `DEMO_PROVIDER` defaults to `rules` so a recording uses no model quota. Set it to `gemini` only when you want Gemini wording. The driver opens a headed 1600×900 browser, types at a human pace, highlights the cursor, saves step screenshots under `docs/screenshots/demo/`, and writes a silent Playwright video to the ignored `dist/demo_raw.webm`. During the live run, press Enter in the driver terminal to continue after each step. `DEMO_PAUSE` defaults to 4 seconds; `--dry-run` automatically paces the six segments to about three minutes.
+
+### Windows (PowerShell)
+
+Run these in order from the repository root. Use separate terminals for the backend and frontend.
+
+**Terminal 1 — backend, isolated demo paths:**
+
+```powershell
+$env:ASSET_INTELLIGENCE_DATASET = "data/raw/flytbase-ahc-swe-asset-intelligence-dataset"
+$env:ASSET_INTELLIGENCE_DB = "data/demo.db"
+$env:LLM_CACHE_PATH = "data/demo_llm_cache.db"
+$env:DEMO_PROVIDER = "rules" # set to "gemini" to use Gemini
+.\.venv\Scripts\python.exe scripts\demo_server.py
+```
+
+**Terminal 2 — frontend:**
+
+```powershell
+cd frontend
+npm run dev -- --host localhost
+```
+
+**Terminal 3 — clean and run the demo:**
+
+```powershell
+.\scripts\demo_reset.ps1
+# Optional cache warm-up; reset again to clear its corrections and private messages.
+.\.venv\Scripts\python.exe scripts\demo_prewarm.py
+.\scripts\demo_reset.ps1
+node scripts\demo_driver.mjs
+```
+
+When the driver opens the architecture slide, start your screen recorder with microphone audio enabled. The Playwright backup remains silent. To verify the full flow automatically, run `node scripts\demo_driver.mjs --dry-run` after the reset; it uses the same pages and API behavior without waiting for terminal input.
+
+### macOS / Linux
+
+Run these in order from the repository root. Use separate terminals for the backend and frontend.
+
+**Terminal 1 — backend, isolated demo paths:**
+
+```bash
+export ASSET_INTELLIGENCE_DATASET=data/raw/flytbase-ahc-swe-asset-intelligence-dataset
+export ASSET_INTELLIGENCE_DB=data/demo.db
+export LLM_CACHE_PATH=data/demo_llm_cache.db
+export DEMO_PROVIDER=rules # set to gemini to use Gemini
+.venv/bin/python scripts/demo_server.py
+```
+
+**Terminal 2 — frontend:**
+
+```bash
+cd frontend
+npm run dev -- --host localhost
+```
+
+**Terminal 3 — clean and run the demo:**
+
+```bash
+bash scripts/demo_reset.sh
+# Optional cache warm-up; reset again to clear its corrections and private messages.
+.venv/bin/python scripts/demo_prewarm.py
+bash scripts/demo_reset.sh
+node scripts/demo_driver.mjs
+```
+
+Start your screen recorder with microphone audio enabled after the architecture slide appears. The Playwright backup remains silent. Run `node scripts/demo_driver.mjs --dry-run` for the automatically paced verification flow.
+
 ## Configuration
 
 Copy `.env.example` to the ignored `.env`. Put any real API key in `.env` or the process environment; never commit `.env`. The checked-in example intentionally contains no secret.

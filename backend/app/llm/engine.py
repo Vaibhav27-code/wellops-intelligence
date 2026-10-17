@@ -931,14 +931,56 @@ class CopilotEngine:
             title_area = area_name or "all areas"
             table_data = []
             citations = []
+            correction_notes = []
+            has_correction_conflict = False
 
             for w in wells:
                 wid = w.get("asset_id")
                 det = get_well_details(wid, as_of=self.as_of)
+                latest = det.get("latest_inspection") or {}
+                for correction in det.get("active_corrections", []):
+                    field = str(correction.get("field") or "")
+                    if field != "wellhead_temp_c" or latest.get("_original_wellhead_temp_c") is None:
+                        continue
+                    original = latest.get("_original_wellhead_temp_c")
+                    corrected = latest.get("wellhead_temp_c")
+                    if original == corrected:
+                        continue
+                    note = str(latest.get("notes") or "")
+                    note_disagrees = bool(
+                        det.get("is_producing")
+                        and re.search(r"\b(not moving|not producing|shut[- ]?in|offline|not operating|down)\b", note, re.IGNORECASE)
+                    )
+                    has_correction_conflict = has_correction_conflict or note_disagrees
+                    correction_notes.append(
+                        f"{wid}: wellhead temperature corrected from {original} °C to {corrected} °C"
+                        + (f"; original inspection note remains preserved: \"{note}\"" if note_disagrees and note else "")
+                    )
+                    correction_id = str(correction.get("correction_id", ""))
+                    citations.append({
+                        "id": f"cit-correction-{correction_id}",
+                        "source_type": "correction",
+                        "source_file": "shared corrections table",
+                        "record_id": correction_id,
+                        "excerpt": (
+                            f"{field}: {original} -> {corrected}; reason: {correction.get('reason', '')}; "
+                            f"evidence: {correction.get('evidence') or 'not supplied'}"
+                        ),
+                        "well_id": wid,
+                    })
+                    citations.append({
+                        "id": f"cit-correction-inspection-{latest.get('inspection_id')}",
+                        "source_type": "inspection",
+                        "source_file": f"assets/{wid}/inspections.jsonl",
+                        "record_id": latest.get("inspection_id"),
+                        "date": str(latest.get("inspected_at", ""))[:10],
+                        "excerpt": str(latest.get("notes") or "Original inspection note preserved alongside corrected telemetry."),
+                        "well_id": wid,
+                    })
                 if det.get("is_producing") is False:
                     delta = det.get("temperature_delta_c")
                     rec_status = w.get("recorded_status", w.get("status", "active"))
-                    insp = det.get("latest_inspection", {})
+                    insp = latest
                     notes_str = insp.get("notes", "")
 
                     # Check why
@@ -998,12 +1040,18 @@ class CopilotEngine:
                 f"Found **{len(table_data)} wells** in {title_area} currently not producing oil as of {self.as_of}.\n\n"
                 f"Where no maintenance or shut-in record explains the stoppage, field checks are recommended."
             )
+            if correction_notes:
+                ans += "\n\nShared corrections applied in this area:\n" + "\n".join(f"• {note}" for note in correction_notes)
 
             return {
                 "answer": ans,
                 "citations": citations,
                 "visualization": viz,
-                "conflict": False,
+                "conflict": has_correction_conflict,
+                "conflict_message": (
+                    "A shared correction changes the inspection-based status while the original inspection note remains preserved."
+                    if has_correction_conflict else None
+                ),
             }
 
         # Plot wellhead and ambient readings for the requested inspection window.

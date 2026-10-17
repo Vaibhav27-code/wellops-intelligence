@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Asset Intelligence Copilot — Architecture</title>
+    <style>
+      :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #07111f; color: #e6edf7; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 56px; background: radial-gradient(ellipse at 20% 0%, #162a44 0, #07111f 58%); }
+      main { width: min(1480px, 100%); }
+      .eyebrow { color: #8fb2ff; letter-spacing: .18em; text-transform: uppercase; font-size: 14px; font-weight: 700; }
+      h1 { margin: 14px 0 8px; font-size: clamp(42px, 5vw, 68px); letter-spacing: -.04em; }
+      .subtitle { color: #a8b7cb; font-size: 23px; margin: 0 0 44px; }
+      .flow { display: grid; grid-template-columns: repeat(5, 1fr); align-items: stretch; gap: 26px; }
+      .stage { min-height: 218px; padding: 24px; border: 1px solid #29405e; border-radius: 16px; background: linear-gradient(145deg, #122238, #0b1727); box-shadow: 0 16px 48px #02060d55; position: relative; }
+      .stage:not(:last-child)::after { content: '→'; position: absolute; right: -24px; top: 90px; color: #5d91ff; font-size: 28px; font-weight: 700; }
+      .num { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: #254a82; color: #cfe0ff; font-weight: 700; }
+      h2 { font-size: 21px; margin: 17px 0 9px; }
+      p { color: #a8b7cb; line-height: 1.55; font-size: 15px; margin: 0; }
+      .lower { display: grid; grid-template-columns: 1.4fr 1fr; gap: 26px; margin-top: 28px; }
+      .principle, .memory { border: 1px solid #29405e; border-radius: 16px; padding: 23px 26px; background: #0d1a2b; }
+      .principle strong { color: #cce0ff; }
+      .pills { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+      .pill { color: #b9d5ff; border: 1px solid #315b91; border-radius: 999px; padding: 7px 12px; font-size: 13px; }
+      .memory { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+      .memory .private { text-align: right; }
+      .stats { margin-top: 28px; color: #8195af; font-size: 13px; text-align: right; }
+      @media (max-width: 1000px) { body { padding: 24px; } .flow { grid-template-columns: 1fr; } .stage { min-height: auto; } .stage:not(:last-child)::after { content: '↓'; right: 24px; top: auto; bottom: -30px; z-index: 2; } .lower { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="eyebrow">FlytBase · Hacktoberfest 2026</div>
+      <h1>Asset Intelligence Copilot</h1>
+      <p class="subtitle">Evidence first. Deterministic numbers. Clear source trails.</p>
+      <section class="flow" aria-label="System architecture">
+        <article class="stage"><span class="num">1</span><h2>Fleet data</h2><p>Wells, inspections, repairs, regulator events, operator notes, and operating manuals.</p></article>
+        <article class="stage"><span class="num">2</span><h2>Ingest and index</h2><p>Format validation loads structured records into SQLite and searchable documents into FTS5.</p></article>
+        <article class="stage"><span class="num">3</span><h2>Find evidence</h2><p>Validated intent selects parameterized tools and retrieves records with source IDs.</p></article>
+        <article class="stage"><span class="num">4</span><h2>Calculate</h2><p>Python applies manual and SOP rules for downtime, spill reporting, thresholds, and costs.</p></article>
+        <article class="stage"><span class="num">5</span><h2>Explain</h2><p>The UI presents the result as a card, table, chart, or map with citations and conflicts.</p></article>
+      </section>
+      <section class="lower">
+        <div class="principle">
+          <strong>LLM boundary</strong>
+          <p style="margin-top:8px">The provider can extract intent and improve answer wording. It does not calculate metrics or create evidence.</p>
+          <div class="pills"><span class="pill">Gemini</span><span class="pill">Ollama</span><span class="pill">Rules fallback</span></div>
+        </div>
+        <div class="memory">
+          <div><strong>Shared</strong><p>Audited operational corrections</p></div>
+          <span aria-hidden="true" style="color:#5d91ff;font-size:26px">↔</span>
+          <div class="private"><strong>Private</strong><p>Per-user conversation history</p></div>
+        </div>
+      </section>
+      <p class="stats">Sample snapshot: 200 wells · 39,567 inspections · 1,655 indexed documents</p>
+    </main>
+  </body>
+</html>
