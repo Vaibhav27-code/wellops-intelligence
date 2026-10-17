@@ -123,14 +123,22 @@ def _parameterized_metric_answer(
     label = metric.replace("_", " ")
     start = result["filters"]["date_from"]
     end = result["filters"]["date_to"]
+    scope = []
+    if result["filters"].get("area"):
+        scope.append(str(result["filters"]["area"]))
+    if result["filters"].get("well_type"):
+        scope.append(f"{result['filters']['well_type']} wells")
+    if result["filters"].get("well_id"):
+        scope.append(str(result["filters"]["well_id"]))
+    scope_text = f" for {', '.join(scope)}" if scope else ""
     if metric_rows:
         summary = "; ".join(
             f"{row['group']}: {row[metric]:,.2f} {result['unit']}"
             for row in metric_rows
         )
-        answer = f"{label.capitalize()} from {start} through {end}, grouped by {intent.group_by}: {summary}."
+        answer = f"{label.capitalize()}{scope_text} from {start} through {end}, grouped by {intent.group_by}: {summary}."
     else:
-        answer = f"No {label} records matched the requested filters from {start} through {end}."
+        answer = f"No {label} records matched {scope_text.strip() or 'the requested filters'} from {start} through {end}."
 
     citations: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -155,7 +163,7 @@ def _parameterized_metric_answer(
     chart_requested = bool(re.search(r"\b(chart|plot|graph|rank|longest|highest|most expensive)\b", question, re.IGNORECASE))
     visualization = generate_visualization(
         "bar" if chart_requested else "table",
-        f"{label.capitalize()} by {intent.group_by} ({start} to {end})",
+        f"{label.capitalize()}{scope_text} by {intent.group_by} ({start} to {end})",
         metric_rows,
         x="group",
         y=metric,
