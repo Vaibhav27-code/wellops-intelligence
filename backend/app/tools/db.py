@@ -1,19 +1,30 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 from backend.app.ingest.loader import resolve_dataset_root
 
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
 
 def get_db_path() -> Path:
-    return Path("data/asset_intelligence.db").resolve()
+    configured = Path(os.getenv("ASSET_INTELLIGENCE_DB", "data/asset_intelligence.db")).expanduser()
+    return configured.resolve() if configured.is_absolute() else (PROJECT_ROOT / configured).resolve()
 
 
 def get_sample_data_root() -> Path:
-    return resolve_dataset_root("data/raw/flytbase-ahc-swe-asset-intelligence-dataset")
+    configured = Path(
+        os.getenv(
+            "ASSET_INTELLIGENCE_DATASET",
+            "data/raw/flytbase-ahc-swe-asset-intelligence-dataset",
+        )
+    ).expanduser()
+    dataset_path = configured if configured.is_absolute() else PROJECT_ROOT / configured
+    return resolve_dataset_root(dataset_path)
 
 
 def get_connection() -> sqlite3.Connection:

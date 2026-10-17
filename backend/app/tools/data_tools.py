@@ -8,8 +8,17 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
+from backend.app.calc.compliance import assess_well_compliance
 from backend.app.calc.downtime import calculate_downtime
-from backend.app.calc.rules import load_production_rule
+from backend.app.calc.rules import assess_spill, load_production_rule, load_rca_rule, load_spill_rules
+from backend.app.ingest.loader import _resolve_report_file, resolve_dataset_root
+from backend.app.memory.store import (
+    apply_corrections_to_inspection,
+    ensure_schema,
+    open_memory,
+    rca_threshold_override,
+    retrieve_shared_memory,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -125,6 +134,14 @@ def get_well_details(
         contexts = _records(connection, "context", asset_id=asset_id, end=reference_date)
         maintenance = _records(connection, "maintenance", asset_id=asset_id, end=reference_date)
 
+    memory = open_memory(database_path)
+    try:
+        shared = retrieve_shared_memory(memory, well_id=asset_id, well_type=str(well.get("well_type", "")))
+    finally:
+        memory.close()
+    corrections = shared["corrections"]
+    inspections = [apply_corrections_to_inspection(row, well, corrections) for row in inspections]
+
     latest = inspections[0] if inspections else None
     derived_status: dict[str, Any] = {"status": "unknown", "reference_date": reference_date}
     citations = [well["_citation"]]
@@ -151,7 +168,7 @@ def get_well_details(
 
         active_notes = [
             note for note in contexts
-            if note.get("note_type") == "operator_note"
+            if note.get("note_type") in {"operator_note", "operator_feedback"}
             and _note_applies(note, latest.get("inspected_at"))
         ]
         planned = [note for note in active_notes if re.search(r"\b(?:planned|scheduled)\b.{0,40}\bshut[- ]?in\b|\bshut[- ]?in\b.{0,40}\b(?:planned|scheduled)\b", str(note.get("text", "")), re.IGNORECASE)]
@@ -167,8 +184,20 @@ def get_well_details(
             derived_status["open_maintenance"] = open_jobs
             citations.extend(job["_citation"] for job in open_jobs)
     derived_status["recorded_status"] = well.get("recorded_status")
+    if latest and latest.get("_applied_corrections"):
+        derived_status["corrections"] = latest["_applied_corrections"]
+        conflicting_notes = [
+            note for note in contexts
+            if note.get("inspection_id") == latest.get("inspection_id")
+            and note.get("note_type") in {"operator_note", "operator_feedback"}
+        ]
+        if conflicting_notes:
+            derived_status["conflicts"] = conflicting_notes
+            citations.extend(note["_citation"] for note in conflicting_notes)
     derived_status["citations"] = list(dict.fromkeys(citations))
     well["derived_status"] = derived_status
+    well["shared_corrections"] = corrections
+    well["shared_notes"] = shared["notes"]
     return well
 
 
@@ -199,6 +228,15 @@ def downtime_for_well(
         well = _row_dict(well_row)
         inspections = _records(connection, "inspection", asset_id=asset_id, end=end or as_of)
         contexts = _records(connection, "context", asset_id=asset_id, end=end or as_of)
+    memory = open_memory(database_path)
+    try:
+        shared = retrieve_shared_memory(memory, well_id=asset_id, well_type=str(well.get("well_type", "")))
+    finally:
+        memory.close()
+    inspections = [
+        apply_corrections_to_inspection(row, well, shared["corrections"])
+        for row in inspections
+    ]
     return calculate_downtime(
         inspections,
         str(well.get("well_type", "")),

@@ -1,0 +1,177 @@
+from __future__ import annotations
+
+import re
+from datetime import date, datetime, timedelta
+from typing import Any
+
+from backend.app.memory.store import open_memory, rca_threshold_override, retrieve_shared_memory
+from backend.app.tools.db import get_connection, get_db_path, query_records
+
+
+def get_well_repairs_cost(well_id: str, year: int = 2026) -> dict[str, Any]:
+    repairs = query_records("maintenance", asset_id=well_id)
+    year_str = str(year)
+    matching = [
+        m for m in repairs
+        if str(m.get("started_at", ""))[:4] == year_str
+    ]
+    total_cost = sum(m.get("cost_usd", {}).get("total", 0) for m in matching)
+    labor_cost = sum(m.get("cost_usd", {}).get("labor", 0) for m in matching)
+    parts_cost = sum(m.get("cost_usd", {}).get("parts", 0) for m in matching)
+
+    return {
+        "well_id": well_id,
+        "year": year,
+        "repair_count": len(matching),
+        "total_cost_usd": total_cost,
+        "labor_cost_usd": labor_cost,
+        "parts_cost_usd": parts_cost,
+        "repairs": matching,
+    }
+
+
+def get_pump_jack_rca_wells(
+    area_name: str = "Northeast Block 7",
+    as_of: str = "2026-10-16",
+) -> list[dict[str, Any]]:
+    # Map area name to area_id
+    areas = query_records("area")
+    target_area = next((a for a in areas if a.get("name", "").lower() == area_name.lower()), None)
+    if not target_area:
+        return []
+
+    area_id = target_area.get("area_id")
+    wells = query_records("well")
+    area_wells = [w for w in wells if w.get("area_id") == area_id]
+
+    as_of_date = date.fromisoformat(as_of)
+    one_year_ago = (as_of_date - timedelta(days=365)).isoformat()
+
+    # Load active shared memory / corrections
+    mem_conn = open_memory(get_db_path())
+    try:
+        shared = retrieve_shared_memory(mem_conn)
+        corrections = shared.get("corrections", [])
+    finally:
+        mem_conn.close()
+
+    qualifying_wells = []
+    for w in area_wells:
+        wid = w.get("asset_id")
+        wtype = w.get("well_type", "T200")
+
+        # Check for threshold override
+        override = rca_threshold_override(w, "pump_jack", corrections)
+        if override:
+            threshold = int(float(override.get("corrected_value", 3)))
+            is_custom = True
+            rule_desc = f"{override.get('author')}'s rule: {override.get('reason')}"
+        else:
+            threshold = 3 # default manual threshold
+            is_custom = False
+            rule_desc = "T200 manual section 10 / T350 manual section 6"
+
+        repairs = query_records("maintenance", asset_id=wid)
+        corrective_pj_repairs = [
+            m for m in repairs
+            if m.get("equipment_kind") == "pump_jack"
+            and m.get("maintenance_type") == "corrective"
+            and one_year_ago <= str(m.get("started_at", ""))[:10] <= as_of
+        ]
+
+        if len(corrective_pj_repairs) >= threshold:
+            qualifying_wells.append(
+                {
+                    "well_id": wid,
+                    "well_name": w.get("name"),
+                    "well_type": wtype,
+                    "repair_count": len(corrective_pj_repairs),
+                    "threshold_applied": threshold,
+                    "is_custom_rule": is_custom,
+                    "rule_description": rule_desc,
+                    "repairs": corrective_pj_repairs,
+                    "citations": [
+                        f"assets/{wid}/maintenance.jsonl#{m.get('maintenance_id')}"
+                        for m in corrective_pj_repairs
+                    ],
+                }
+            )
+
+    qualifying_wells.sort(key=lambda x: x["well_id"])
+    return qualifying_wells
+
+
+def get_containment_breaches_in_area(
+    area_name: str = "Southwest Block 24",
+    days: int = 90,
+    as_of: str = "2026-10-16",
+    sop_limit_hours: float = 4.0,
+) -> list[dict[str, Any]]:
+    areas = query_records("area")
+    target_area = next((a for a in areas if a.get("name", "").lower() == area_name.lower()), None)
+    if not target_area:
+        return []
+
+    area_id = target_area.get("area_id")
+    wells = query_records("well")
+    area_wells = {w.get("asset_id"): w for w in wells if w.get("area_id") == area_id}
+
+    cutoff_date = (date.fromisoformat(as_of) - timedelta(days=days)).isoformat()
+
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT d.asset_id, d.source_path, d.content
+            FROM documents d
+            WHERE d.document_type = 'maintenance_report'
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+
+    breaches = []
+    containment_pattern = re.compile(
+        r"\bcontained\s+(?:(?:about|approximately)\s+)?(\d+(?:\.\d+)?)\s+hours? after (?:the )?inspection(?:\s+flight)?\b",
+        re.IGNORECASE,
+    )
+
+    for r in rows:
+        wid = r["asset_id"]
+        if wid not in area_wells:
+            continue
+        content = r["content"]
+        match = containment_pattern.search(content)
+        if not match:
+            continue
+        hours = float(match.group(1))
+        if hours > sop_limit_hours:
+            source_path = r["source_path"]
+            filename = source_path.split("/")[-1]
+            repairs = query_records("maintenance", asset_id=wid)
+            rel_m = next((m for m in repairs if m.get("report_file") and filename in m.get("report_file")), None)
+            if not rel_m:
+                continue
+            started_at = str(rel_m.get("started_at", ""))[:10]
+            if not (cutoff_date <= started_at <= as_of):
+                continue
+
+            iid = rel_m.get("triggered_by_inspection_id")
+            well_meta = area_wells[wid]
+            breaches.append(
+                {
+                    "well_id": wid,
+                    "well_name": well_meta.get("name"),
+                    "area_id": area_id,
+                    "containment_hours": hours,
+                    "sop_limit_hours": sop_limit_hours,
+                    "maintenance_id": rel_m.get("maintenance_id"),
+                    "inspection_id": iid,
+                    "report_file": rel_m.get("report_file"),
+                    "started_at": started_at,
+                    "citation": f"assets/{wid}/{rel_m.get('report_file')}#{rel_m.get('maintenance_id')}",
+                }
+            )
+
+    breaches.sort(key=lambda b: b["well_id"])
+    return breaches

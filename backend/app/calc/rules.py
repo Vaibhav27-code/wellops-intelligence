@@ -80,7 +80,7 @@ def load_production_rule(well_type: str, sample_data_root: str | Path) -> Produc
     manual_path = Path(sample_data_root) / "fleet" / "well-types" / f"{well_type}.md"
     text = manual_path.read_text(encoding="utf-8")
     match = re.search(
-        r"at least\s+\*\*(?P<value>\d+(?:\.\d+)?)\s*°C above ambient",
+        r"at least\s+\*\*(?P<value>\d+(?:\.\d+)?)\s*°C\s+above\s+ambient",
         text,
         flags=re.IGNORECASE,
     )

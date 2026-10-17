@@ -1,0 +1,176 @@
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from backend.app.llm.base import LLMClient
+from backend.app.tools.db import get_sample_data_root
+
+
+IntentName = Literal[
+    "well_status",
+    "area_nonproducing",
+    "temperature_trend",
+    "spill_search",
+    "containment_breach",
+    "downtime",
+    "repair_cost",
+    "compliance",
+    "rca",
+    "sop_search",
+    "correction",
+    "shared_memory",
+    "private_memory",
+    "general",
+]
+
+
+class Intent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    intent: IntentName = "general"
+    well_ids: list[str] = Field(default_factory=list)
+    area_name: str | None = None
+    season: Literal["spring", "summer", "autumn", "fall", "winter"] | None = None
+    quarter: Literal["Q1", "Q2", "Q3", "Q4"] | None = None
+    year: int | None = None
+    date_phrase: str | None = None
+    keywords: list[str] = Field(default_factory=list)
+
+
+_WELL_RE = re.compile(r"\bWELL-\d{4}\b", re.IGNORECASE)
+_DATE_RE = re.compile(
+    r"\b(?:last|past|previous|this|during|in|since|from)\s+(?:the\s+)?(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen)\s+(?:days?|weeks?|months?|years?)\b|"
+    r"\b(?:last|past|previous|this|during|in|since|from)\s+(?:the\s+)?(?:\d{4}|spring|summer|autumn|fall|winter|(?:first|second|third|fourth|[1-4](?:st|nd|rd|th)?)\s+quarter)\b",
+    re.IGNORECASE,
+)
+
+
+def _areas() -> tuple[tuple[str, str], ...]:
+    path = Path(get_sample_data_root()) / "fleet" / "areas.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return ()
+    rows = data.get("areas", []) if isinstance(data, dict) else []
+    return tuple(
+        (str(row.get("name", "")), str(row.get("area_id", "")))
+        for row in rows
+        if isinstance(row, dict) and row.get("name")
+    )
+
+
+def _find_area(text: str) -> str | None:
+    lowered = text.casefold()
+    for name, area_id in _areas():
+        if name and name.casefold() in lowered:
+            return name
+        if area_id and re.search(rf"(?<!\w){re.escape(area_id.casefold())}(?!\w)", lowered):
+            return name
+    return None
+
+
+def _extract_quarter(text: str) -> str | None:
+    match = re.search(r"\bq\s*([1-4])\b", text, re.IGNORECASE)
+    if not match:
+        match = re.search(r"\b(first|second|third|fourth|1st|2nd|3rd|4th)\s+quarter\b", text, re.IGNORECASE)
+    if not match:
+        return None
+    value = match.group(1).casefold()
+    digits = {"first": "1", "second": "2", "third": "3", "fourth": "4", "1st": "1", "2nd": "2", "3rd": "3", "4th": "4"}
+    return f"Q{digits.get(value, value)}"
+
+
+def extract_intent(question: str) -> Intent:
+    """Extract entities and a broad task intent without model calls or data answers."""
+    text = question.casefold()
+    well_ids = list(dict.fromkeys(match.upper() for match in _WELL_RE.findall(question)))
+    area_name = _find_area(question)
+    season_match = re.search(r"\b(spring|summer|autumn|fall|winter)\b", text)
+    year_match = re.search(r"\b(20\d{2})\b", text)
+    date_match = _DATE_RE.search(question)
+    date_phrase = date_match.group(0) if date_match else None
+    quarter = _extract_quarter(question)
+
+    keyword_rules = {
+        "downtime": r"\b(down|downtime|offline|shut[- ]*in)\b",
+        "spill": r"\b(spills?|crude|releases?|barrels?|bbl)\b",
+        "repair_cost": r"\b(repair|repairs|maintenance)\b.{0,35}\b(cost|costs|spent|price|expense)\b|\b(cost|costs|spent|price|expense)\b.{0,35}\b(repair|repairs|maintenance)\b",
+        "sop": r"\b(sop|procedure|protocol|manual|limit|deadline)\b",
+        "correction": r"\b(correct|correction|wrong|faulty|re-measured|remeasured|measured)\b",
+        "memory": r"\b(remember|discussed|yesterday|previous (?:conversation|chat)|last (?:conversation|chat)|history)\b",
+    }
+    keywords = [name for name, pattern in keyword_rules.items() if re.search(pattern, text, re.IGNORECASE)]
+
+    private_memory = bool(re.search(r"\b(we discussed|i discussed|remember|yesterday|previous (?:conversation|chat)|last (?:conversation|chat)|our last chat)\b", text))
+    shared_memory = bool(re.search(r"\b(for everyone|for all|team now wants|shared notice|shared memory)\b", text))
+    if re.search(r"\b(correct|correction|wrong|faulty|re-measured|remeasured|team now wants)\b", text):
+        intent: IntentName = "correction"
+    elif shared_memory:
+        intent = "shared_memory"
+    elif private_memory:
+        intent = "private_memory"
+    elif re.search(r"\b(contain|contained|containment)\b", text) and re.search(r"\b(spills?|releases?)\b", text):
+        intent = "containment_breach"
+    elif re.search(r"\b(compliance|violation|violations|breach|breaches|broken|rules has|rules did|still open)\b", text):
+        intent = "compliance"
+    elif re.search(r"\b(root[ -]cause|rca|pump jack)\b", text):
+        intent = "rca"
+    elif "repair_cost" in keywords:
+        intent = "repair_cost"
+    elif "downtime" in keywords:
+        intent = "downtime"
+    elif re.search(r"\b(sop|procedure|protocol|manual)\b", text):
+        intent = "sop_search"
+    elif "spill" in keywords:
+        intent = "spill_search"
+    elif re.search(r"\b(temperature|wellhead|ambient|line chart|trend)\b", text) and re.search(r"\b(chart|trend|weeks?|months?|temperature|over time)\b", text):
+        intent = "temperature_trend"
+    elif re.search(r"\b(which|what|list|show)\b.{0,45}\b(wells?|not producing|non[ -]?producing)\b", text) and area_name:
+        intent = "area_nonproducing"
+    elif well_ids:
+        intent = "well_status"
+    else:
+        intent = "general"
+
+    return Intent(
+        intent=intent,
+        well_ids=well_ids,
+        area_name=area_name,
+        season=season_match.group(1).casefold() if season_match else None,
+        quarter=quarter,
+        year=int(year_match.group(1)) if year_match else None,
+        date_phrase=date_phrase,
+        keywords=keywords,
+    )
+
+
+def intent_prompt(question: str) -> str:
+    return json.dumps({"question": question}, ensure_ascii=False)
+
+
+def parse_intent_response(response: str) -> Intent:
+    return Intent.model_validate_json(response)
+
+
+class RulesClient(LLMClient):
+    provider = "rules"
+    model = "rules-v1"
+
+    def generate(
+        self,
+        prompt: str,
+        system: str | None = None,
+        json_schema: dict[str, Any] | None = None,
+    ) -> str:
+        del system, json_schema
+        try:
+            request = json.loads(prompt)
+            question = request.get("question", "") if isinstance(request, dict) else ""
+        except (json.JSONDecodeError, TypeError):
+            question = prompt
+        return extract_intent(str(question)).model_dump_json()
