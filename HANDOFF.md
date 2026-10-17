@@ -132,14 +132,19 @@ Format: `[time] tool: done / in progress / blocked / next`
 - [12:20 IST] Codex: initial listing was incomplete; follow-up scan found the React/Vite starter and placeholder docs, but no dataset, Dataset Guide, official question set, or manuals/SOPs / in progress: data-independent scaffold / next: inspect source bundle when supplied.
 - [12:22 IST] Codex: inventory and handoff corrected to distinguish provisional code from source data; backend health stub is ready for verification / next: run backend check with Python 3.11 if available.
 - [12:25 IST] Codex: project virtual environment created with Python 3.11; health endpoint test passed (1 passed, Starlette deprecation warning) / done: data-independent scaffold / next: inspect real source bundle when supplied.
+- [12:29 IST] Codex: cloned the official sample dataset at b8de8c9bd68f40334e5d06922126169e4f3bf3ca; scanned all source records and manuals; populated schemas, joins, nulls, duplicate checks, date rules, and thresholds / in progress: P0 loader and deterministic calculations / next: SQLite ingestion and calculation tests.
+- [12:40 IST] Codex: added validated, transactional, idempotent SQLite + FTS5 ingestion; indexed shared notes; added manual/SOP-derived tools and deterministic calculations / verified: 8 pytest cases pass, WELL-0001 status and 2025 downtime match Q1/Q5, and full sample ingestion reports zero errors / next: expose HTTP endpoints, corrections/private memory, then run the official question set.
+- [12:42 IST] Codex: reviewed and verified current backend additions, including well lookup and downtime utilities; confirmed secret and raw-data exclusions / verified: 8 pytest cases pass, no .env or dataset files tracked / next: publish the reviewed repository, then wire the API.
 
 ## KNOWN SCHEMAS / FINDINGS (fill in after inspection)
-- Files and formats: no source files are present in data/raw; repository has a React/Vite starter, provisional TypeScript domain types, a FastAPI /health stub, and placeholder docs.
-- Join keys: unknown; source data is not available.
-- Date fields and formats: unknown; source data is not available.
-- Temperature thresholds per well type (with manual section/page): unknown; manuals/SOPs are not available.
-- User records / correction mechanism: no source records; frontend currently has in-memory sample users, histories, and corrections only.
-- Risks discovered: source schema, join keys, date formats, thresholds, and official expected questions are unavailable; frontend types and 10 sample prompt chips are provisional and unverified.
+- Files and formats: official challenge repo cloned to data/raw/flytbase-ahc-swe-asset-intelligence-dataset at b8de8c9bd68f40334e5d06922126169e4f3bf3ca; sample-data has 202 JSON, 800 JSONL, 1,514 Markdown files; 200 wells, 39,567 inspections, 5,665 maintenance jobs, 90 regulator events, 141 context notes, 1,509 repair reports.
+- Join keys: asset_id across per-well records; inspection_id references; user_id, team_id, area_id; report_file resolves maintenance reports.
+- Date fields and formats: timestamps are ISO 8601 UTC; date/installed_on/valid_from/valid_to are YYYY-MM-DD. Evaluation reference date is 2026-10-16.
+- Temperature thresholds: T200 >=15 C above ambient (manual section 9.3), T350 >=20 C (section 3).
+- User records / correction mechanism: 15 users in fleet/users.json; 56 source correction notes name an inspection_id and preserve source text; 82 operator notes and 3 feedback notes are distinct note types.
+- Risks discovered: recorded_status can be stale; planned shut-ins may only be in notes; repair downtime_hours is not the downtime calculation; report_file paths vary; image references have no image files; all source-linked corrections and user disagreements must preserve provenance.
+- Backend files: `backend/app/ingest/loader.py` stores source JSON payloads, citations, manuals, SOPs, reports, and notes; `backend/app/calc/` reads manual/SOP rules and computes downtime/compliance; `backend/app/tools/data_tools.py` provides validated well, record, and FTS retrieval functions.
+- Full sample load: 45,686 structured records (200 wells, 39,567 inspections, 5,665 maintenance jobs, 90 regulator events, 141 context notes, 4 areas, 4 teams, 15 users) and 1,655 indexed documents; validation returned 0 errors and 0 warnings. Database at `data/asset_intelligence.db` is generated and ignored.
 - [12:30 IST] Antigravity: DONE — full React+Vite+TS frontend built, TypeScript 0 errors, production build passes.
   Components: AppShell, TopBar, UserPicker (3 users), ChatThread (private history per user via Zustand), ExampleChips (10 chips),
   MessageBubble (avatar, conflict banner, inline viz, citations toggle, correct button), CitationsDrawer (all 7 source types),
