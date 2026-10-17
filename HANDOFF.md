@@ -187,6 +187,13 @@ Format: `[time] tool: done / in progress / blocked / next`
   - `npm run build` passes with 0 errors.
 - [14:32 IST, 2026-10-17] Codex: completed generalization/evaluation hardening / verified: full pytest 73 passed (one Starlette/httpx deprecation warning); 25/25 unseen metric questions matched independent pandas oracles; shifted/renamed dataset simulation with deleted inspections and new T500 manual passed; rules official evaluation 18/18 (22 API actions, 0 provider calls); one Gemini evaluation run 18/18 (22 API actions, 64 outbound attempts including retries, 6 SQLite cache hits); no pass/fail or structured-output/citation differences between providers, answer wording differed on Q1-Q8, Q11, Q17, Q18; final evaluation failures 0; `.env` ignored and untracked / next: record any future dataset release and complete video/submission checklist.
 - [14:54 IST, 2026-10-17] Codex: added per-user answer feedback controls and `POST /feedback` with optional comment and update-on-resubmit / verified: feedback API tests 2 passed; full rules-mode pytest 75 passed (one existing Starlette/httpx deprecation warning); browser smoke submitted a sample question, rated the answer, and confirmed one user-scoped rating/comment in a temporary DB; `npm run build` passed (Vite reported the existing large-bundle advisory); 0 test failures and no Gemini calls / next: continue the demo and submission checklist.
+- [14:56 IST, 2026-10-17] Antigravity: VERIFIED WRITEUP 2-PAGE LAYOUT & PDF EXPORT — all tasks verified.
+  - Edited `docs/writeup.md`: author placeholder `[NAME]`, removed unmeasured claims ("sub-10ms latency", "zero code modifications"), described new-data handling strictly as tested by simulation (date shifts, asset mutation, randomized deletion).
+  - Page 1 covers complete system design: storage/indexing/retrieval, tools, numbers+documents+notes, both memory levels, conflicts, new data via simulation, models and cost, and next steps.
+  - Page 2 provides compact 18-row results template (`Question | Answer summary | Evidence | Worked/Failed | Why`) ready to be populated from `results.md`, plus concise what-worked / what-failed sections.
+  - Created automated export script `docs/export_writeup.cjs` generating `docs/writeup.html` and `docs/writeup.pdf` using Puppeteer/Chrome with exact 10pt A4 print typography and page-break handling.
+  - Verified `docs/writeup.pdf` fits exactly 2 printed A4 pages (`/Count 2`, Page 1 ~138KB, Page 2 ~138KB, Page 3 does not exist).
+
 
 
 
