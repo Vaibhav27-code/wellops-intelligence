@@ -1,6 +1,6 @@
 # Asset Intelligence Copilot
 
-Evidence-grounded operations support for the fictional FlytBase oil-well fleet. The backend ingests structured records and manuals into SQLite + FTS5, calculates fleet metrics deterministically, and returns cited answers with a visualization specification. A React + Vite frontend renders cards, tables, charts, maps, and heatmaps.
+Evidence-grounded operations support for the fictional FlytBase oil-well fleet. The backend ingests structured records and manuals into SQLite + FTS5, calculates fleet metrics deterministically, and returns answers with a visualization specification. A React + Vite frontend renders cards, tables, charts, maps, and heatmaps.
 
 > 🎬 **5-Minute Narrated Demo Video:** [`docs/demo_5min_narrated.webm`](docs/demo_5min_narrated.webm) *(Opus Audio + VP9 Video)*  
 > 📄 **Evaluation Report (PDF):** [`docs/report.pdf`](docs/report.pdf) \| **2-Page System Design Writeup (PDF):** [`docs/writeup.pdf`](docs/writeup.pdf)  
@@ -308,7 +308,9 @@ $env:LLM_PROVIDER = "gemini"
 python scripts/evaluate_questions.py --provider gemini
 ```
 
-## Limitations
+## Results and limitations
+
+On the final test set the rules router returned clarification prompts or off-target output for most multi-document questions; deterministic metric tools were verified on the sample data; offline verification scripts exist but are not wired into chat.
 
 - The included dataset and manuals are synthetic and fictional; the manuals and SOPs are not real-world operating or legal guidance.
 - Rules-based extraction is deterministic but covers known intent patterns. Ambiguous or unsupported wording may need a clearer area, metric, or period.

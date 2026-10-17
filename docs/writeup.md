@@ -2,6 +2,8 @@
 
 **FlytBase Hacktoberfest 2026** | **Author:** [NAME] | **Date:** 17 October 2026
 
+Note: the results below are for the 200-well sample dataset. On the 600-well final test set the copilot answered few questions correctly; see README 'Results and limitations'.
+
 ---
 
 ### 1. Storage, Indexing & Retrieval
