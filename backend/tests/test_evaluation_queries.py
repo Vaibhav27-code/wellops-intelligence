@@ -11,6 +11,12 @@ from backend.app.tools.db import get_db_path
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def force_rules_provider(monkeypatch):
+    """Keep endpoint evaluation deterministic and independent of provider credentials."""
+    monkeypatch.setenv("LLM_PROVIDER", "rules")
+
+
 @pytest.fixture(autouse=True, scope="module")
 def reset_memory():
     conn = open_memory(get_db_path())
