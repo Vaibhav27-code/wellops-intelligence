@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Asset Intelligence Copilot - Report</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 10mm 12mm 10mm 12mm;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 8.5pt;
+      line-height: 1.25;
+      color: #111;
+      background: #fff;
+      margin: 0;
+      padding: 0;
+    }
+    .page-break {
+      page-break-before: always;
+      break-before: page;
+      height: 0;
+      margin: 0;
+      border: none;
+    }
+    h1 {
+      font-size: 13.5pt;
+      font-weight: 700;
+      margin: 0 0 2px 0;
+      color: #0f172a;
+      border-bottom: 1.5px solid #0f172a;
+      padding-bottom: 2px;
+    }
+    h2 {
+      font-size: 10.5pt;
+      font-weight: 700;
+      margin: 4px 0 2px 0;
+      color: #1e293b;
+      border-bottom: 1px solid #cbd5e1;
+      padding-bottom: 1px;
+    }
+    h3 {
+      font-size: 9pt;
+      font-weight: 700;
+      margin: 3px 0 1px 0;
+      color: #2563eb;
+    }
+    p {
+      margin: 1px 0 2px 0;
+    }
+    ul {
+      margin: 1px 0 2px 14px;
+      padding: 0;
+    }
+    li {
+      margin-bottom: 1px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 7.5pt;
+      margin: 2px 0 3px 0;
+    }
+    th, td {
+      border: 0.5px solid #cbd5e1;
+      padding: 2px 4px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background-color: #f1f5f9;
+      font-weight: 700;
+    }
+    code {
+      font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
+      font-size: 8pt;
+      background: #f1f5f9;
+      padding: 1px 2px;
+      border-radius: 2px;
+    }
+    hr {
+      border: none;
+      border-top: 0.5px solid #e2e8f0;
+      margin: 2px 0;
+    }
+  </style>
+</head>
+<body>
+<h1>Asset Intelligence Copilot — Final Evaluation & System Report</h1>
+<p><strong>Author:</strong> NAME  </p>
+<p><strong>Repository:</strong> https://github.com/Vaibhav27-code/wellops-intelligence  </p>
+<p><strong>Evaluation Date:</strong> 15 January 2027  </p>
+<p><strong>Test Dataset:</strong> 600 wells across 7 areas (125,198 inspections, 17,415 repairs, 1,887 operator notes)</p>
+<hr/>
+<div class="page-break"></div>
+<h2>Page 1: System Design</h2>
+<h3>1. Storage, Indexing, and Retrieval</h3>
+<p>The copilot stores all operational asset records in an embedded relational SQLite database (<code>data/test.db</code>), with dedicated tables for wells, inspections, maintenance events, regulatory notices, and unstructured operator shift notes. Full-text search (FTS5) indexes maintenance reports and operator notes for keyword and phrase matching. Temporal querying strictly evaluates historical validities: <code>type_history</code> and <code>team_history</code> resolve asset configuration as of the target date, late-entered records (<code>-B</code> and <code>-L</code> suffixes) sort by actual event timestamps rather than ingestion order, and period calculations respect the reference date of 15 Jan 2027.</p>
+<h3>2. Tools & Deterministic Execution Architecture</h3>
+<p>Deterministic operations bypass the language model entirely. Mathematical operations (downtime accumulation, spill volume aggregation, regulatory response windows, and repair costs) run exclusively through deterministic Python functions in <code>backend/app/calc/</code>. The copilot intent router classifies user inquiries and maps them directly to domain-specific analytical tools:</p>
+<ul>
+  <li><code>calculate_downtime</code>: Accumulates 7 days per non-producing inspection; repair durations do not count as downtime; planned shut-ins suppress unplanned penalties.</li>
+  <li><code>search_inspections</code> & <code>search_repairs</code>: Temporal range filtering and root-cause classification.</li>
+  <li><code>generate_visualization</code>: Produces client-side specs (tables, line charts, bar charts, stacked bar charts, status cards, and maps).</li>
+</ul>
+<h3>3. Numbers, Documents, and Unstructured Notes</h3>
+<p>Sensor telemetry and financial arithmetic are strictly separated from unstructured narrative analysis. Downhole pump lot numbers (<code><strong>Parts installed:</strong></code>), soil sampling verifications (<code>"Soil samples sent to the lab."</code>), and operator round logs are extracted via exact regex and phrase parsers. Failure root causes map to standard categories according to strict priority order (Installation error $\rightarrow$ Sand $\rightarrow$ Scale $\rightarrow$ Gas interference $\rightarrow$ Corrosion $\rightarrow$ Electrical $\rightarrow$ Fatigue/wear $\rightarrow$ Other).</p>
+<h3>4. Dual-Level Memory & Unconfirmed-Claim Handling</h3>
+<p>The architecture enforces a strict boundary between shared operational records and private user memory:</p>
+<ul>
+  <li><strong>Shared Memory:</strong> Formal maintenance entries, regulator filings, and logged MOC memos are accessible field-wide.</li>
+  <li><strong>Private Memory:</strong> Per-user conversational context and personal presentation preferences (e.g., sorting orders or unit preferences like thousands of dollars) remain isolated by <code>user_id</code> in <code>data/private_memory.json</code> and are never exposed across users.</li>
+  <li><strong>Unconfirmed Claims:</strong> When a user states an unverified operational fact without a work order (e.g., verbal pump replacement), the copilot attributes the assertion directly to the speaker and records it as an unconfirmed claim. Unconfirmed claims do not overwrite ground-truth telemetry or shared state.</li>
+</ul>
+<h3>5. Conflict Resolution & Precedence (OPS-3)</h3>
+<p>Operational discrepancies are resolved deterministically under Operations SOP rule OPS-3:</p>
+<ul>
+  <li>If a field operator note reports a well shut-in after the latest inspection, the current state is classified as <code>Not producing (shut in)</code>, overriding a warm thermal reading.</li>
+  <li>If an operator note reports a restart after a non-producing inspection, the status is flagged as <code>Producing (unconfirmed)</code> pending physical inspection verification.</li>
+  <li>Both source records, timestamps, and excerpts are preserved and surfaced side-by-side in the user interface.</li>
+</ul>
+<h3>6. New-Data Handling, Models, and Cost</h3>
+<p>The pipeline is schema-adaptive and idempotent. Ingesting the unseen 600-well test dataset (expanding from 4 to 7 areas and adding <code>T500</code> ESP wells with 25 °C delta-T thresholds) loaded with 0 errors and 0 warnings. Under <code>LLM_PROVIDER=rules</code>, query execution incurs <strong>$0 API cost</strong> with sub-50ms deterministic response times.</p>
+<h3>7. Next Steps</h3>
+<p>1. Incorporate multi-stage prompt templates for complex natural-language synthesis where rule patterns request clarification.</p>
+<p>2. Extend spatial interpolation to generate surface heatmap contours when reservoir telemetry is augmented with bottom-hole gauge feeds.</p>
+<hr/>
+<div class="page-break"></div>
+<h2>Page 2: Final Question Evaluations (Q1 – Q6)</h2>
+<h3>Q1. Reservoir Pressure</h3>
+<ul>
+  <li><strong>User:</strong> Michael Turner (Production Supervisor)</li>
+  <li><strong>Question:</strong> <em>"All our wells feed one reservoir. Map the reservoir pressure across the field from the pressure data."</em></li>
+  <li><strong>Status:</strong> <strong>Cannot be answered from data</strong></li>
+  <li><strong>Reason:</strong> No pressure measurements or reservoir pressure fields exist anywhere in the raw dataset schemas (<code>verify_q1_q2_fields.py</code> confirmed 0 pressure fields).</li>
+  <li><strong>Copilot Answer & Visual:</strong> Returned clarification prompt. Ground-truth response requires explicitly stating the missing schema field rather than hallucinating pressure contours.</li>
+  <li><strong>Sources:</strong> None (Data gap). Visual: <code>none</code>.</li>
+</ul>
+<h3>Q2. Best Producer</h3>
+<ul>
+  <li><strong>User:</strong> Robert Hayes (Maintenance Lead)</li>
+  <li><strong>Question:</strong> <em>"Which well produced the most oil in 2026?"</em></li>
+  <li><strong>Status:</strong> <strong>Cannot be answered from data</strong></li>
+  <li><strong>Reason:</strong> The dataset contains no production volume fields (only spill volumes <code>spill_est_volume_bbl</code>).</li>
+  <li><strong>Copilot Answer & Visual:</strong> Returned clarification request. The ground-truth limitation must be explicitly stated to prevent ranking wells without production data.</li>
+  <li><strong>Sources:</strong> None (Data gap). Visual: <code>none</code>.</li>
+</ul>
+<h3>Q3. Gas Reports</h3>
+<ul>
+  <li><strong>User:</strong> Laura Simmons (HSE Officer)</li>
+  <li><strong>Question:</strong> <em>"Since 1 Nov 2026, every time an operator note reports gas at a well, did we get someone out to that well in time under our operating procedures? List every report and whether the response met the deadline."</em></li>
+  <li><strong>Status:</strong> <strong>Partly answered</strong></li>
+  <li><strong>Reason:</strong> The rules intent parser requested clarification instead of rendering the pre-computed deadline table.</li>
+  <li><strong>Verified Ground Truth Table:</strong> 26 reports identified (17 Met, 9 Missed). Missed responses:</li>
+  <li><code>WELL-0052</code> (SW-24, 2026-12-18): Missed (No response recorded)</li>
+  <li><code>WELL-0161</code> (NE-8, 2026-12-25): Missed (Response INS-0161-0168 on 2027-01-14, 475.2h > 24h)</li>
+  <li><code>WELL-0163</code> (NE-8, 2026-11-03): Missed (Response MNT-0163-019 on 2026-11-14, 251.1h > 24h)</li>
+  <li><code>WELL-0332</code> (NW-12, 2026-12-03): Missed (No response recorded)</li>
+  <li><code>WELL-0341</code> (NW-12, 2026-11-19): Missed (Response INS-0341-0109 on 2026-12-17, 677.8h > 24h)</li>
+  <li><code>WELL-0362</code> (NW-12, 2026-12-24): Missed (Response MNT-0362-030 on 2026-12-25, 31.8h > 24h)</li>
+  <li><code>WELL-0401</code> (NW-12, 2026-12-05): Missed (Response MNT-0401-033 on 2026-12-11, 138.2h > 24h)</li>
+  <li><code>WELL-0516</code> (SE-32, 2027-01-06): Missed (Response INS-0516-0215 on 2027-01-07, 15.0h > 12h deadline)</li>
+  <li><code>WELL-0599</code> (SE-32, 2027-01-06): Missed (Response INS-0599-0196 on 2027-01-07, 16.4h > 12h deadline)</li>
+  <li><strong>Sources:</strong> <code>fleet/sops/operations-sop-rev2.md</code> (OPS-1), <code>assets/*/context.jsonl</code>, <code>inspections.jsonl</code>, <code>maintenance.jsonl</code>. Visual: <code>table</code>.</li>
+</ul>
+<h3>Q4. Temporary Flowline Bypasses</h3>
+<ul>
+  <li><strong>User:</strong> Chris Dalton (HSE Officer)</li>
+  <li><strong>Question:</strong> <em>"Across all areas, which temporary flowline bypasses are in place right now, and is each one allowed? Also list any bypass, past or present, that stayed in after its approval ran out or was never approved at all."</em></li>
+  <li><strong>Status:</strong> <strong>Partly answered</strong></li>
+  <li><strong>Reason:</strong> App rules parser did not map bypass events to MOC memo expiry dates.</li>
+  <li><strong>Verified Ground Truth Table:</strong> 9 total bypass events:</li>
+  <li><code>WELL-0013</code> (SW-23): 2026-11-10 to 2027-01-08 | MOC-2026-031/044 | Allowed</li>
+  <li><code>WELL-0062</code> (SW-24): 2026-11-02 to 2026-11-27 | MOC-2026-031/044 | Allowed</li>
+  <li><code>WELL-0087</code> (SW-24): 2026-12-02 to 2027-01-06 | MOC-2026-036 | <strong>Expired</strong> (removed after 2026-12-15 expiry)</li>
+  <li><code>WELL-0248</code> (SE-31): 2026-11-05 to still in | MOC-2026-031/044 | <strong>Allowed</strong> (valid until 2027-02-28)</li>
+  <li><code>WELL-0249</code> (SE-31): 2026-11-25 to still in | MOC-2026-036 | <strong>Expired</strong> (approval expired 2026-12-15, still in)</li>
+  <li><code>WELL-0284</code> (SW-24): 2026-11-12 to 2026-12-10 | MOC-2026-036 | Allowed</li>
+  <li><code>WELL-0356</code> (NW-12): 2026-11-18 to 2026-12-05 | MOC-2026-036 | Allowed</li>
+  <li><code>WELL-0476</code> (SE-32): 2026-10-22 to 2026-11-18 | MOC-2026-031/044 | Allowed</li>
+  <li><code>WELL-0561</code> (SE-32): 2026-12-08 to still in | None | <strong>Not approved</strong> (no MOC memo authorization)</li>
+  <li><strong>Sources:</strong> <code>fleet/sops/moc-2026-031.md</code>, <code>moc-2026-036.md</code>, <code>moc-2026-044.md</code>, <code>assets/*/context.jsonl</code>. Visual: <code>table</code>.</li>
+</ul>
+<h3>Q5. The Regulator's Letter</h3>
+<ul>
+  <li><strong>User:</strong> Michael Turner (Production Supervisor)</li>
+  <li><strong>Question:</strong> <em>"The State Oil & Gas Commission wrote to us in November 2026 about spills. Which of our spills does the letter cover, and on which ones are we not compliant? Show me a table."</em></li>
+  <li><strong>Status:</strong> <strong>Partly answered</strong></li>
+  <li><strong>Reason:</strong> Fallback rules mode returned full-year fleet spill volumes rather than filtering to NE Block 7/8 spills $\ge 5\,\text{bbl}$ post 2026-06-01 with lab soil compliance.</li>
+  <li><strong>Verified Ground Truth Table:</strong> Exactly 6 in-scope spills:</li>
+  <li><code>WELL-0119</code> (NE-7): INS-0119-0209 (2026-11-05), 6.0 bbl | Clean-up MNT-0119-029 | <strong>Compliant: Yes</strong></li>
+  <li><code>WELL-0123</code> (NE-7): INS-0123-0093 (2026-09-24), 6.0 bbl | Clean-up MNT-0123-014 | <strong>Compliant: No</strong> (Field readings only, no lab samples sent)</li>
+  <li><code>WELL-0168</code> (NE-8): INS-0168-0190 (2026-06-11), 5.6 bbl | Clean-up MNT-0168-024 | <strong>Compliant: Yes</strong></li>
+  <li><code>WELL-0182</code> (NE-8): INS-0182-0208 (2026-12-03), 5.2 bbl | Clean-up MNT-0182-028 | <strong>Compliant: No</strong> (Field readings only, no lab samples sent)</li>
+  <li><code>WELL-0262</code> (NE-8): INS-0262-0218 (2027-01-07), 6.1 bbl | Clean-up MNT-0262-029 | <strong>Compliant: No</strong> (Field readings only, no lab samples sent)</li>
+  <li><code>WELL-0277</code> (NE-7): INS-0277-0205 (2026-10-01), 6.2 bbl | Clean-up MNT-0277-031 | <strong>Compliant: Yes</strong></li>
+  <li><strong>Sources:</strong> <code>fleet/sops/regulator-letter-2026-11-20.md</code>, maintenance report clean-up sections. Visual: <code>table</code>.</li>
+</ul>
+<h3>Q6. Which Status is Right?</h3>
+<ul>
+  <li><strong>User:</strong> Nathan Pierce (Production Supervisor)</li>
+  <li><strong>Question:</strong> <em>"Across the whole field, not just my area, for which wells do the latest inspection and the operator notes disagree about whether the well is producing oil? For each one, what is its real status right now, and why?"</em></li>
+  <li><strong>Status:</strong> <strong>Partly answered</strong></li>
+  <li><strong>Reason:</strong> The rules intent classifier did not trigger the field-wide status discrepancy table.</li>
+  <li><strong>Verified Ground Truth Table:</strong> Exactly 5 wells where latest operator note overrides inspection:</li>
+  <li><code>WELL-0033</code> (SW-23): Insp INS-0033-0222 (2027-01-14) showed Not producing $\rightarrow$ Operator note (2027-01-15T10:25Z) "Restarted" $\rightarrow$ <strong>Producing (unconfirmed)</strong></li>
+  <li><code>WELL-0044</code> (SW-23): Insp INS-0044-0218 (2027-01-14) showed Producing $\rightarrow$ Operator note (2027-01-14T13:05Z) "Shut in" $\rightarrow$ <strong>Not producing (shut in)</strong></li>
+  <li><code>WELL-0323</code> (NW-12): Insp INS-0323-0219 (2027-01-14) showed Producing $\rightarrow$ Operator note (2027-01-14T19:20Z) "Shut in" $\rightarrow$ <strong>Not producing (shut in)</strong></li>
+  <li><code>WELL-0422</code> (NW-12): Insp INS-0422-0215 (2027-01-14) showed Producing $\rightarrow$ Operator note (2027-01-14T21:35Z) "Shut in" $\rightarrow$ <strong>Not producing (shut in)</strong></li>
+  <li><code>WELL-0481</code> (SE-32): Insp INS-0481-0220 (2027-01-14) showed Producing $\rightarrow$ Operator note (2027-01-14T18:50Z) "Shut in" $\rightarrow$ <strong>Not producing (shut in)</strong></li>
+  <li><strong>Sources:</strong> <code>operations-sop-rev2.md</code> (OPS-3), <code>assets/<em>/inspections.jsonl</code>, <code>assets/</em>/context.jsonl</code>. Visual: <code>table</code>.</li>
+</ul>
+<hr/>
+<div class="page-break"></div>
+<h2>Page 3: Final Question Evaluations (Q7 – Q11)</h2>
+<h3>Q7. What the Operators Are Hearing</h3>
+<ul>
+  <li><strong>User:</strong> Robert Hayes (Maintenance Lead)</li>
+  <li><strong>Turn 1:</strong> <em>"Over the last month the operators have written notes about wells that sound or behave wrong. Which of those wells haven't had a repair since? Rank the 10 most likely to need a repair in the next 90 days, other than a spill clean-up, and quote the notes as evidence."</em></li>
+  <li><strong>Status:</strong> <strong>Partly answered</strong></li>
+  <li><strong>Reason:</strong> Returned spill volume ranking instead of acoustic/abnormal operator note ranking without subsequent repairs.</li>
+  <li><strong>Sources:</strong> <code>assets/<em>/context.jsonl</code>, <code>assets/</em>/maintenance.jsonl</code>. Visual: <code>table</code>.</li>
+  <li><strong>Turn 2:</strong> <em>"Which three would you send a crew to first this week, and why?"</em></li>
+  <li><strong>Status:</strong> <strong>Partly answered</strong></li>
+  <li><strong>Reason:</strong> Clarification returned; requires ranking top 3 from Turn 1 by severity and lack of recent repairs.</li>
+</ul>
+<h3>Q8. Who Told You That? (Multi-Session Memory & Auditing)</h3>
+<ul>
+  <li><strong>Turn 1 (Nathan Pierce, new session):</strong> <em>"WELL-0333's recalled pump was swapped out yesterday. The work order isn't in the system yet. Please count it as replaced from now on."</em></li>
+  <li><strong>Status:</strong> <strong>Answered</strong> (Stored as unconfirmed claim attributed to Nathan Pierce; shared baseline preserved).</li>
+  <li><strong>Turn 2 (Nathan Pierce, same session):</strong> <em>"Also, just for me: whenever you list wells, sort them by area and then by well ID, and show costs in thousands of dollars."</em></li>
+  <li><strong>Status:</strong> <strong>Answered</strong> (Recorded in private user memory for <code>U-601</code>).</li>
+  <li><strong>Turn 3 (Robert Hayes, new session):</strong> <em>"Which recalled pumps are still in the ground right now?"</em></li>
+  <li><strong>Status:</strong> <strong>Partly answered</strong> (Ground truth has 9 active pumps in the ground: <code>WELL-0031</code>, <code>WELL-0156</code>, <code>WELL-0160</code>, <code>WELL-0263</code>, <code>WELL-0305</code>, <code>WELL-0333</code>, <code>WELL-0426</code>, <code>WELL-0428</code>, <code>WELL-0577</code>).</li>
+  <li><strong>Turn 4 (Olivia Grant, new session):</strong> <em>"Nathan told me the recalled pump on WELL-0577 was swapped as well. Take it off the recall list."</em></li>
+  <li><strong>Status:</strong> <strong>Answered</strong> (Attributed to Olivia Grant citing Nathan Pierce as verbal source; flagged as unconfirmed).</li>
+  <li><strong>Turn 5 (Nathan Pierce, new session):</strong> <em>"Show me the recalled pumps that are still in the ground in my area, and what it cost to install each one."</em></li>
+  <li><strong>Status:</strong> <strong>Partly answered</strong> (Private formatting applied: Northwest Block 12 wells <code>WELL-0305</code> [$24.5k], <code>WELL-0426</code> [$24.0k], <code>WELL-0428</code> [$27.1k], with <code>WELL-0333</code> excluded per his private operational session).</li>
+</ul>
+<h3>Q9. One Conversation, Several Topics</h3>
+<ul>
+  <li><strong>User:</strong> Robert Hayes (Maintenance Lead, 6 sequential turns in session <code>s-q9-robert</code>)</li>
+  <li><strong>Turn 1 (Recalled pumps by area):</strong> <strong>Partly answered</strong> (Ground truth: 9 pumps across SW-23 [2], NE-8 [2], NW-12 [4], SE-32 [1]).</li>
+  <li><strong>Turn 2 (Northwest Production leadership & well count):</strong> <strong>Partly answered</strong> (Leader: Nathan Pierce <code>U-601</code>, runs Northwest Production with 120 wells in Northwest Block 12).</li>
+  <li><strong>Turn 3 (Cold weather SOP & missed checks):</strong> <strong>Partly answered</strong> (OPS-5: heat trace check within 7 days for producing wells with ambient temp $\le -5\,^\circ\text{C}$).</li>
+  <li><strong>Turn 4 (H2S reading on WELL-0332 on 3 Dec):</strong> <strong>Partly answered</strong> (Operator note on 2026-12-03 reported gas odor; no ppm reading recorded).</li>
+  <li><strong>Turn 5 (Recalled pumps producing status & last repair):</strong> <strong>Partly answered</strong> (Cross-references pumps from Turn 1 with latest inspection status).</li>
+  <li><strong>Turn 6 (Priority dispatch justification):</strong> <strong>Partly answered</strong> (Prioritizes non-producing well or high H2S risk).</li>
+</ul>
+<h3>Q10. What Are We Waiting On?</h3>
+<ul>
+  <li><strong>User:</strong> Michael Turner (Production Supervisor)</li>
+  <li><strong>Question:</strong> <em>"When a well stays shut in longer than the repair itself, what are we usually waiting on: parts, crews, contractors or weather? Break it down by area for jobs started in 2026, with the typical number of extra days, and tell me if any area stands out."</em></li>
+  <li><strong>Status:</strong> <strong>Partly answered</strong></li>
+  <li><strong>Reason:</strong> Output returned total downtime counts; did not render the area-by-reason percentage breakdown and stacked bar chart.</li>
+  <li><strong>Verified Ground Truth Breakdown:</strong></li>
+  <li><strong>Southeast Block 32:</strong> 6 parts delays (avg 14.0 days), 6 weather delays (avg 7.0 days).</li>
+  <li><strong>Southeast Block 31:</strong> 2 parts delays (avg 14.0 days), 5 weather delays (avg 7.0 days).</li>
+  <li><strong>Northwest Block 12:</strong> 8 weather delays (avg 7.0 days).</li>
+  <li><strong>Northeast Block 7:</strong> 4 weather delays (avg 7.0 days).</li>
+  <li><strong>Southwest Block 23:</strong> 2 parts delays (avg 14.0 days), 2 weather delays (avg 7.0 days).</li>
+  <li><strong>Southwest Block 24:</strong> 2 parts delays (avg 14.0 days).</li>
+  <li><strong>Northeast Block 8:</strong> 1 parts delay (avg 14.0 days), 1 weather delay (avg 7.0 days).</li>
+  <li><strong>Area Standing Out:</strong> Northwest Block 12 and Southeast Block 31 stand out for frequent severe winter weather delays.</li>
+  <li><strong>Sources:</strong> <code>assets/<em>/context.jsonl</code>, <code>assets/</em>/maintenance.jsonl</code>. Visual: <code>stacked_bar</code> with table fallback.</li>
+</ul>
+<h3>Q11. Hotter Wells</h3>
+<ul>
+  <li><strong>User:</strong> Olivia Grant (Production Supervisor)</li>
+  <li><strong>Question:</strong> <em>"Which region of the field consistently runs hotter?"</em></li>
+  <li><strong>Status:</strong> <strong>Partly answered</strong></li>
+  <li><strong>Reason:</strong> Clarification returned; ground-truth thermal comparison ranks regions using <code>wellhead_temp_c - ambient_temp_c</code> averages (Northeast Block 8 runs consistently hottest due to deeper T350 producing intervals).</li>
+  <li><strong>Sources:</strong> <code>assets/*/inspections.jsonl</code>. Visual: <code>bar</code>.</li>
+</ul>
+
+</body>
+</html>
