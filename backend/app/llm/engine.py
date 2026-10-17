@@ -609,7 +609,7 @@ class CopilotEngine:
             for msg in reversed(history):
                 content = str(msg.get("content", ""))
                 payload = msg.get("payload") or {}
-                # Check for Q6 discussion
+                # Recover the assets from the user's earlier conversation.
                 found_wells = re.findall(r"\bWELL-\d{4}\b", content)
                 if len(set(found_wells)) >= 3:
                     three_wells = list(dict.fromkeys(found_wells))[:3]
