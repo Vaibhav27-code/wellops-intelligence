@@ -128,13 +128,15 @@ Codex owns `/backend`. Antigravity owns `/frontend`. Cursor does small edits any
 ## STATUS LOG (update before every tool switch)
 Format: `[time] tool: done / in progress / blocked / next`
 
-- [12:10] start: nothing built yet. Next: Codex inspects data and writes data_inventory.md.
-- [12:20 IST] Codex: workspace inspected; no dataset, guide, questions, manuals, or repo files found / in progress: data-independent scaffold / next: inspect and ingest the real source bundle when supplied.
+- [12:10] start: source inspection and project setup pending.
+- [12:20 IST] Codex: initial listing was incomplete; follow-up scan found the React/Vite starter and placeholder docs, but no dataset, Dataset Guide, official question set, or manuals/SOPs / in progress: data-independent scaffold / next: inspect source bundle when supplied.
+- [12:22 IST] Codex: inventory and handoff corrected to distinguish provisional code from source data; backend health stub is ready for verification / next: run backend check with Python 3.11 if available.
+- [12:25 IST] Codex: project virtual environment created with Python 3.11; health endpoint test passed (1 passed, Starlette deprecation warning) / done: data-independent scaffold / next: inspect real source bundle when supplied.
 
 ## KNOWN SCHEMAS / FINDINGS (fill in after inspection)
-- Files and formats: none found under D:\Hactoberfest; only the user-provided handoff was available.
+- Files and formats: no source files are present in data/raw; repository has a React/Vite starter, provisional TypeScript domain types, a FastAPI /health stub, and placeholder docs.
 - Join keys: unknown; source data is not available.
 - Date fields and formats: unknown; source data is not available.
 - Temperature thresholds per well type (with manual section/page): unknown; manuals/SOPs are not available.
-- User records / correction mechanism: not present in the workspace; implementation is pending source review.
-- Risks discovered: no source files are present, so schema, join keys, date formats, thresholds, and expected questions cannot be established without guessing.
+- User records / correction mechanism: no source records; frontend currently has in-memory sample users, histories, and corrections only.
+- Risks discovered: source schema, join keys, date formats, thresholds, and official expected questions are unavailable; frontend types and 10 sample prompt chips are provisional and unverified.
