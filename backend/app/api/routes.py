@@ -30,6 +30,7 @@ def api_get_users() -> dict[str, Any]:
             "name": str(r.get("name", r.get("user_id"))),
             "role": str(r.get("role", "operator")),
             "team_id": r.get("team_id"),
+            "area_id": r.get("area_id"),
         }
         for r in rows
     ]
