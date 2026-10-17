@@ -97,7 +97,11 @@ export function DataTable({ spec }: DataTableProps) {
             {sorted.map((row, i) => (
               <tr key={i} className={i % 2 === 0 ? '' : 'data-table__row--alt'}>
                 {columns.map((col) => (
-                  <td key={col} className="data-table__td">
+                  <td
+                    key={col}
+                    className="data-table__td"
+                    style={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.4 }}
+                  >
                     {formatCell(row[col])}
                   </td>
                 ))}
@@ -111,12 +115,14 @@ export function DataTable({ spec }: DataTableProps) {
 }
 
 function formatCell(val: unknown): React.ReactNode {
-  if (val === null || val === undefined) return <span className="cell-null">—</span>;
+  if (val === null || val === undefined || String(val).trim() === '') {
+    return <span className="cell-null" style={{ color: 'var(--c-text-muted)', fontStyle: 'italic' }}>not recorded</span>;
+  }
   if (typeof val === 'boolean') return val ? '✓' : '✗';
   const s = String(val);
   // colour-code status-like strings
-  if (/violation|spill|fail|down/i.test(s)) return <span className="cell-err">{s}</span>;
-  if (/warn|pending|review/i.test(s)) return <span className="cell-warn">{s}</span>;
-  if (/ok|pass|produc|active/i.test(s)) return <span className="cell-ok">{s}</span>;
+  if (/violation|spill|fail|down|expired|missed|not approved/i.test(s)) return <span className="cell-err">{s}</span>;
+  if (/warn|pending|review|unconfirmed/i.test(s)) return <span className="cell-warn">{s}</span>;
+  if (/ok|pass|produc|active|allowed|met/i.test(s)) return <span className="cell-ok">{s}</span>;
   return s;
 }

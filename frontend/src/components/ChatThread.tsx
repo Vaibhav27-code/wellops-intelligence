@@ -10,7 +10,7 @@ let msgIdCounter = 0;
 const nextId = () => `msg-${++msgIdCounter}-${Date.now()}`;
 
 export function ChatThread() {
-  const { currentUser, histories, addMessage } = useStore();
+  const { currentUser, histories, addMessage, clearHistory } = useStore();
   const messages = histories[currentUser.user_id] ?? [];
 
   const [input, setInput] = React.useState('');
@@ -106,23 +106,44 @@ export function ChatThread() {
           Active User: <strong style={{ color: 'var(--c-accent-h)' }}>{currentUser.display_name}</strong>
           {' '}(Private Thread)
         </span>
-        <button
-          onClick={() => setShowChips((s) => !s)}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: '3px 10px',
-            borderRadius: '4px',
-            background: showChips ? 'var(--c-accent)' : 'var(--c-surface2)',
-            color: '#fff',
-            fontWeight: 600,
-            fontSize: '11px',
-          }}
-          title="Toggle 18 benchmark question chips"
-        >
-          {showChips ? 'Hide Benchmark Questions' : '⚡ Benchmark Questions (Q1–Q18)'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            onClick={() => clearHistory(currentUser.user_id)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '3px 8px',
+              borderRadius: '4px',
+              background: 'var(--c-surface2)',
+              border: '1px solid var(--c-border)',
+              color: 'var(--c-text)',
+              fontWeight: 600,
+              fontSize: '11px',
+              cursor: 'pointer',
+            }}
+            title="Start a fresh chat session for this user"
+          >
+            + New session
+          </button>
+          <button
+            onClick={() => setShowChips((s) => !s)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '3px 10px',
+              borderRadius: '4px',
+              background: showChips ? 'var(--c-accent)' : 'var(--c-surface2)',
+              color: '#fff',
+              fontWeight: 600,
+              fontSize: '11px',
+            }}
+            title="Toggle 18 benchmark question chips"
+          >
+            {showChips ? 'Hide Benchmark Questions' : '⚡ Benchmark Questions (Q1–Q18)'}
+          </button>
+        </div>
       </div>
 
       {/* Expandable chips drawer if toggled */}

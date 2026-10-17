@@ -71,7 +71,7 @@ export interface Citation {
   date?: string;
 }
 
-export type VizType = 'card' | 'table' | 'line' | 'bar' | 'map' | 'heatmap';
+export type VizType = 'card' | 'table' | 'line' | 'bar' | 'stacked_bar' | 'map' | 'heatmap';
 
 export interface VisualizationSpec {
   type: VizType;
@@ -81,6 +81,7 @@ export interface VisualizationSpec {
   y?: string | string[];
   units?: string;
   columns?: string[];
+  stacked?: boolean;
 }
 
 export interface ChatMessage {

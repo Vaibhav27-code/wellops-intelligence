@@ -1,5 +1,5 @@
 import React from 'react';
-import { buildAppUser, useStore } from '../store';
+import { buildAppUser, DEFAULT_USERS, useStore } from '../store';
 import { api } from '../api/client';
 import type { AppUser } from '../types';
 import { ChevronDown, User } from 'lucide-react';
@@ -15,7 +15,11 @@ export function UserPicker() {
       .getUsers()
       .then((res) => {
         if (mounted && res.users && res.users.length > 0) {
-          const appUsers = res.users.map((u, i) => buildAppUser(u, i));
+          const backendAppUsers = res.users.map((u, i) => buildAppUser(u, i));
+          const userMap = new Map<string, AppUser>();
+          DEFAULT_USERS.forEach((u) => userMap.set(u.user_id, u));
+          backendAppUsers.forEach((u) => userMap.set(u.user_id, u));
+          const appUsers = Array.from(userMap.values());
           setUsers(appUsers);
           // Keep current selection if valid, or default to Michael Turner (U-201)
           const found = appUsers.find((u) => u.user_id === currentUser.user_id);

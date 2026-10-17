@@ -18,7 +18,7 @@ interface VizRendererProps {
 function checkCompatibility(spec: VisualizationSpec): Record<VizType, boolean> {
   const data = spec.data;
   if (!Array.isArray(data) || data.length === 0) {
-    return { card: false, table: false, line: false, bar: false, map: false, heatmap: false };
+    return { card: false, table: false, line: false, bar: false, stacked_bar: false, map: false, heatmap: false };
   }
 
   const first = data[0];
@@ -57,6 +57,7 @@ function checkCompatibility(spec: VisualizationSpec): Record<VizType, boolean> {
     card: hasCard,
     line: hasLine,
     bar: hasBar,
+    stacked_bar: hasBar,
     map: hasGeo,
     heatmap: hasHeatmap,
   };
@@ -153,6 +154,7 @@ function Inner({ type, spec }: { type: VizType; spec: VisualizationSpec }) {
       case 'line':
         return <LineChartViz spec={spec} />;
       case 'bar':
+      case 'stacked_bar':
         return <BarChartViz spec={spec} />;
       case 'heatmap':
         return <HeatmapViz spec={spec} />;

@@ -47,6 +47,18 @@ export const DEFAULT_USERS: AppUser[] = [
   { user_id: 'U-305', name: 'Megan Ward', role: 'maintenance_technician', team_id: 'TEAM-MX', display_name: 'Megan Ward (Maintenance Technician)', avatar_color: AVATAR_COLORS[12] },
   { user_id: 'U-401', name: 'Laura Simmons', role: 'hse_officer', team_id: 'TEAM-HSE', display_name: 'Laura Simmons (Hse Officer)', avatar_color: AVATAR_COLORS[13] },
   { user_id: 'U-402', name: 'Chris Dalton', role: 'hse_officer', team_id: 'TEAM-HSE', display_name: 'Chris Dalton (Hse Officer)', avatar_color: AVATAR_COLORS[14] },
+  { user_id: 'U-501', name: 'Olivia Grant', role: 'production_supervisor', team_id: 'TEAM-SE', display_name: 'Olivia Grant (Production Supervisor)', avatar_color: AVATAR_COLORS[0] },
+  { user_id: 'U-502', name: 'Marcus Lee', role: 'field_inspector', team_id: 'TEAM-SE', display_name: 'Marcus Lee (Field Inspector)', avatar_color: AVATAR_COLORS[1] },
+  { user_id: 'U-503', name: 'Hannah Brooks', role: 'field_inspector', team_id: 'TEAM-SE', display_name: 'Hannah Brooks (Field Inspector)', avatar_color: AVATAR_COLORS[2] },
+  { user_id: 'U-504', name: 'Diego Ramirez', role: 'field_operator', team_id: 'TEAM-SE', display_name: 'Diego Ramirez (Field Operator)', avatar_color: AVATAR_COLORS[3] },
+  { user_id: 'U-505', name: 'Kayla Morgan', role: 'field_operator', team_id: 'TEAM-SE', display_name: 'Kayla Morgan (Field Operator)', avatar_color: AVATAR_COLORS[4] },
+  { user_id: 'U-506', name: 'Derek Walsh', role: 'field_operator', team_id: 'TEAM-SE', display_name: 'Derek Walsh (Field Operator)', avatar_color: AVATAR_COLORS[5] },
+  { user_id: 'U-601', name: 'Nathan Pierce', role: 'production_supervisor', team_id: 'TEAM-NW', display_name: 'Nathan Pierce (Production Supervisor)', avatar_color: AVATAR_COLORS[6] },
+  { user_id: 'U-602', name: 'Rachel Dunn', role: 'field_inspector', team_id: 'TEAM-NW', display_name: 'Rachel Dunn (Field Inspector)', avatar_color: AVATAR_COLORS[7] },
+  { user_id: 'U-603', name: 'Caleb Whitaker', role: 'field_inspector', team_id: 'TEAM-NW', display_name: 'Caleb Whitaker (Field Inspector)', avatar_color: AVATAR_COLORS[8] },
+  { user_id: 'U-604', name: 'Brandon Shaw', role: 'field_operator', team_id: 'TEAM-NW', display_name: 'Brandon Shaw (Field Operator)', avatar_color: AVATAR_COLORS[9] },
+  { user_id: 'U-605', name: 'Lauren Pruitt', role: 'field_operator', team_id: 'TEAM-NW', display_name: 'Lauren Pruitt (Field Operator)', avatar_color: AVATAR_COLORS[10] },
+  { user_id: 'U-606', name: 'Austin Kemp', role: 'field_operator', team_id: 'TEAM-NW', display_name: 'Austin Kemp (Field Operator)', avatar_color: AVATAR_COLORS[11] },
 ];
 
 export interface GroupedQuestion {

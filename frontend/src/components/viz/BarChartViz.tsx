@@ -63,8 +63,9 @@ export function BarChartViz({ spec }: BarChartVizProps) {
             cursor={{ fill: 'rgba(255,255,255,0.04)' }}
           />
           {!isSingleSeries && <Legend wrapperStyle={{ fontSize: 12, color: '#9ca3af' }} />}
-          {yKeys.map((key, seriesIdx) =>
-            isSingleSeries ? (
+          {yKeys.map((key, seriesIdx) => {
+            const isStacked = (spec as any).stacked !== false && (yKeys.length > 1 || (spec as any).stacked === true || (spec.type as string) === 'stacked_bar');
+            return isSingleSeries ? (
               <Bar key={key} dataKey={key} radius={[4, 4, 0, 0]}>
                 {data.map((_, i) => (
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
@@ -74,11 +75,12 @@ export function BarChartViz({ spec }: BarChartVizProps) {
               <Bar
                 key={key}
                 dataKey={key}
+                stackId={isStacked ? "a" : undefined}
                 fill={COLORS[seriesIdx % COLORS.length]}
-                radius={[4, 4, 0, 0]}
+                radius={isStacked ? [0, 0, 0, 0] : [4, 4, 0, 0]}
               />
-            )
-          )}
+            );
+          })}
         </ReBarChart>
       </ResponsiveContainer>
     </div>
