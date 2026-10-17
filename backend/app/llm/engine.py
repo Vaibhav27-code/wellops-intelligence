@@ -20,6 +20,7 @@ from backend.app.memory.store import (
     retrieve_shared_memory,
 )
 from backend.app.tools.db import get_connection, get_db_path, get_reference_date, get_sample_data_root, query_records
+from backend.app.tools.data_tools import get_maintenance_report_texts
 from backend.app.tools.downtime import get_well_downtime
 from backend.app.tools.metrics import query_metric
 from backend.app.tools.repairs import (
@@ -453,7 +454,25 @@ class CopilotEngine:
             if not inspection:
                 return None
             inspection_id = str(inspection.get("inspection_id"))
-            notes = [row for row in query_records("context", asset_id=well_id, order_by_event=True) if row.get("inspection_id") == inspection_id]
+            notes = [
+                row
+                for row in query_records("context", asset_id=well_id, order_by_event=True)
+                if row.get("inspection_id") == inspection_id
+                or re.search(
+                    rf"(?<![\w-]){re.escape(inspection_id)}(?![\w-])",
+                    str(row.get("text", "")),
+                    re.IGNORECASE,
+                )
+            ]
+            related_maintenance = [
+                row
+                for row in query_records("maintenance", asset_id=well_id, order_by_event=True)
+                if row.get("triggered_by_inspection_id") == inspection_id
+            ]
+            report_texts = get_maintenance_report_texts(
+                related_maintenance,
+                dataset_root=self.sample_root,
+            )
             if spill:
                 answer = f"**Yes, the recorded detection at {well_id} on {str(inspection.get('inspected_at', ''))[:10]} stands as a real spill** ({spill.get('volume_bbl')} bbl, {spill.get('classification')})."
             else:
@@ -481,7 +500,35 @@ class CopilotEngine:
                 "excerpt": note.get("text"),
                 "well_id": well_id,
             } for note in notes)
-            disagreement = len(notes) > 1 and any(re.search(r"\b(water|not crude|not a spill)\b", str(note.get("text", "")), re.IGNORECASE) for note in notes)
+            for job in related_maintenance:
+                maintenance_id = str(job.get("maintenance_id", ""))
+                report_file = job.get("report_file")
+                report_text = report_texts.get(maintenance_id, "")
+                excerpt_match = re.search(
+                    rf".{{0,120}}{re.escape(inspection_id)}.{{0,220}}",
+                    report_text,
+                    re.IGNORECASE | re.DOTALL,
+                )
+                excerpt = re.sub(r"\s+", " ", excerpt_match.group(0)).strip() if excerpt_match else ""
+                if report_file:
+                    citations.append({
+                        "id": f"cit-{maintenance_id}",
+                        "source_type": "repair",
+                        "source_file": f"assets/{well_id}/{report_file}",
+                        "record_id": maintenance_id,
+                        "excerpt": excerpt or f"Maintenance report triggered by inspection {inspection_id}.",
+                        "well_id": well_id,
+                    })
+            note_texts = [str(note.get("text", "")) for note in notes]
+            source_disagrees = any(
+                re.search(r"\b(water|not crude|not oil|not a spill|false positive)\b", note, re.IGNORECASE)
+                for note in note_texts
+            )
+            source_confirms = any(
+                re.search(r"\b(crude|oil|spill|detection stands)\b", note, re.IGNORECASE)
+                for note in note_texts
+            )
+            disagreement = len(notes) > 1 and source_disagrees and source_confirms
             return {"answer": answer, "citations": citations, "visualization": None, "conflict": disagreement, "conflict_message": "Source notes contain conflicting spill interpretations." if disagreement else None}
 
         positive_claim = bool(re.search(r"\b(running fine|running ok|back online|operational)\b|(?<!not )\bproducing\b", lower))

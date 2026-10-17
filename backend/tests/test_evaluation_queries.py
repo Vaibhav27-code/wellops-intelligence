@@ -337,3 +337,23 @@ def test_q14_team_rule_override():
     data2 = res2.json()
     assert "WELL-0120" in data2["answer"]
     assert "WELL-0102" not in data2["answer"]
+
+
+def test_spill_disagreement_surfaces_referenced_notes_and_repair_report():
+    response = client.post(
+        "/chat",
+        json={
+            "question": "Was the 20 Aug spill at WELL-0101 real oil?",
+            "user_id": "test-user",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["conflict"] is True
+    assert "produced water" in data["answer"].lower()
+    assert "crude oil" in data["answer"].lower()
+    citation_text = str(data["citations"])
+    assert "CTX-0101-002" in citation_text
+    assert "CTX-0101-003" in citation_text
+    assert "MNT-0101-029" in citation_text
